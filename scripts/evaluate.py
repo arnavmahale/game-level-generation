@@ -65,7 +65,7 @@ def is_standing_position(level, row, col):
     return is_walkable(level, row, col)
 
 
-def check_playability(level, max_jump_height=4, max_jump_width=3):
+def check_playability(level, max_jump_height=2, max_jump_width=2):
     """
     BFS-based check: can a player reach from leftmost column to rightmost?
     Player can walk, jump (up to max_jump_height tiles up, max_jump_width across),
@@ -225,14 +225,17 @@ def evaluate_model(name, generated_levels, real_levels):
 
 
 if __name__ == "__main__":
+    import os
     import torch
-    from data_utils import load_levels, train_test_split_levels, get_model_path
+    from data_utils import load_levels, train_val_test_split_levels, get_model_path
     from model_naive import NaiveBaseline
     from model_classical import BigramModel
     from model_deep import ConvVAE, generate_levels
 
     levels = load_levels()
-    train, test = train_test_split_levels(levels)
+    # Held-out test split — val is consumed by training for checkpoint
+    # selection and must not appear in the reported numbers.
+    train, _val, test = train_val_test_split_levels(levels)
     N_GEN = 100
 
     # Real levels baseline
@@ -250,9 +253,21 @@ if __name__ == "__main__":
     bigram_levels = bigram.generate(n=N_GEN, seed=42)
     evaluate_model("Classical (Bigram)", bigram_levels, train)
 
-    # VAE
+    # VAE (conditional — evaluate at each difficulty bucket). Skip when
+    # no cVAE checkpoint exists yet — naive/bigram numbers are still useful.
     device = torch.device("cpu")
-    vae = ConvVAE(latent_dim=64).to(device)
-    vae.load_state_dict(torch.load(get_model_path("vae_best.pth"), map_location=device, weights_only=True))
-    vae_levels = generate_levels(vae, n=N_GEN, temperature=1.0, seed=42, device=device)
-    evaluate_model("Deep Learning (VAE)", vae_levels, train)
+    cvae_path = get_model_path("cvae_best.pth")
+    if os.path.exists(cvae_path):
+        vae = ConvVAE(latent_dim=64).to(device)
+        try:
+            vae.load_state_dict(torch.load(cvae_path, map_location=device, weights_only=True))
+            labels = {0: "easy", 1: "medium", 2: "hard"}
+            for bucket in range(3):
+                vae_levels_3c = generate_levels(vae, n=N_GEN, bucket=bucket, seed=42, device=device)
+                vae_levels = vae_levels_3c.copy()
+                vae_levels[vae_levels == 2] = 6
+                evaluate_model(f"Deep Learning (VAE, {labels[bucket]})", vae_levels, train)
+        except (RuntimeError, KeyError) as e:
+            print(f"\n[skip] cVAE checkpoint incompatible with current arch: {e.__class__.__name__}")
+    else:
+        print("\n[skip] cvae_best.pth not found — train model_deep.py to include VAE rows.")
