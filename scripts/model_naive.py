@@ -9,7 +9,7 @@ random height variation is added per column.
 import numpy as np
 import pickle
 from data_utils import (
-    load_levels, train_test_split_levels, get_model_path,
+    load_levels, train_val_test_split_levels, get_model_path,
     NUM_CATEGORIES, GRID_HEIGHT, GRID_WIDTH,
 )
 
@@ -65,7 +65,7 @@ class NaiveBaseline:
 
 if __name__ == "__main__":
     levels = load_levels()
-    train, test = train_test_split_levels(levels)
+    train, _val, test = train_val_test_split_levels(levels)
 
     model = NaiveBaseline()
     model.fit(train)
