@@ -16,6 +16,7 @@ import numpy as np
 import torch
 from flask import Flask, request, jsonify, send_from_directory, session
 from flask_cors import CORS
+from itsdangerous import URLSafeSerializer, BadSignature
 
 logging.basicConfig(
     level=logging.INFO,
@@ -139,6 +140,34 @@ app.config.update(
 CORS(app, supports_credentials=True)
 
 
+# HF Spaces embeds the app in a cross-site iframe, where Safari/Chrome block
+# third-party cookies for auth. We issue a signed token on login/register and
+# accept it via Authorization: Bearer header as a cookie-free fallback.
+_token_serializer = URLSafeSerializer(app.config["SECRET_KEY"], salt="auth-token")
+
+
+def _make_token(user_id: int) -> str:
+    return _token_serializer.dumps({"uid": int(user_id)})
+
+
+def _verify_token(token: str):
+    try:
+        data = _token_serializer.loads(token)
+        return int(data["uid"])
+    except (BadSignature, KeyError, ValueError, TypeError):
+        return None
+
+
+def _current_user_id():
+    uid = session.get("user_id")
+    if uid:
+        return uid
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return _verify_token(auth[7:])
+    return None
+
+
 from werkzeug.exceptions import HTTPException
 import traceback
 
@@ -162,14 +191,7 @@ def _unhandled_error(err):
 def _require_auth(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        uid = session.get("user_id")
-        app.logger.info(
-            "auth check path=%s cookies=%s session_keys=%s uid=%s",
-            request.path,
-            list(request.cookies.keys()),
-            list(session.keys()),
-            uid,
-        )
+        uid = _current_user_id()
         if not uid:
             return jsonify({"error": "not authenticated"}), 401
         return fn(uid, *args, **kwargs)
@@ -196,7 +218,10 @@ def auth_register():
         return jsonify({"error": "could not create user"}), 500
     session.permanent = True
     session["user_id"] = uid
-    return jsonify({"user": {"id": uid, "username": username}})
+    return jsonify({
+        "user": {"id": uid, "username": username},
+        "token": _make_token(uid),
+    })
 
 
 @app.route("/api/auth/login", methods=["POST"])
@@ -209,7 +234,10 @@ def auth_login():
         return jsonify({"error": "invalid username or password"}), 401
     session.permanent = True
     session["user_id"] = user["id"]
-    return jsonify({"user": {"id": user["id"], "username": user["username"]}})
+    return jsonify({
+        "user": {"id": user["id"], "username": user["username"]},
+        "token": _make_token(user["id"]),
+    })
 
 
 @app.route("/api/auth/logout", methods=["POST"])
@@ -220,7 +248,7 @@ def auth_logout():
 
 @app.route("/api/auth/me", methods=["GET"])
 def auth_me():
-    uid = session.get("user_id")
+    uid = _current_user_id()
     if not uid:
         return jsonify({"user": None})
     # Don't session.clear() on a missed lookup: the embedded Turso replica

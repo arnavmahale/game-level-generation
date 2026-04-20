@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { apiFetch } from '../utils/api';
 
 export default function UserPanel({ user, stats, onLogout }) {
   return (
@@ -34,7 +35,7 @@ export function Leaderboard({ onClose }) {
   const [err, setErr] = useState(null);
 
   useEffect(() => {
-    fetch('/api/leaderboard/endless', { credentials: 'include' })
+    apiFetch('/api/leaderboard/endless')
       .then((r) => r.json())
       .then((b) => setEndless((b.rows || []).slice(0, 10)))
       .catch((e) => setErr(e.message));

@@ -27,15 +27,18 @@ const MODELS = [
   },
 ];
 
+// Perceived difficulty didn't match the bucket labels the VAE was trained on
+// (bucket 0 plays hardest, 1 easiest, 2 medium). Remap button → difficulty
+// value so the UI reads correctly. Endless mode still hard-codes 50.
 const DIFFICULTY_LEVELS = [
-  { id: 'easy', label: 'Easy', value: 0 },
-  { id: 'medium', label: 'Medium', value: 50 },
-  { id: 'hard', label: 'Hard', value: 100 },
+  { id: 'easy', label: 'Easy', value: 50 },
+  { id: 'medium', label: 'Medium', value: 100 },
+  { id: 'hard', label: 'Hard', value: 0 },
 ];
 
 export default function ControlPanel({ onGenerate, isLoading }) {
   const [model, setModel] = useState('vae');
-  const [difficulty, setDifficulty] = useState(50);
+  const [difficulty, setDifficulty] = useState(100);
   const [seed, setSeed] = useState('');
   const [repair, setRepair] = useState(true);
 
