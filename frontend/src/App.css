@@ -784,6 +784,42 @@ body {
   text-align: center;
 }
 
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1rem 0 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.auth-guest {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.auth-guest:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
 /* ------------------------------------------------------------------ */
 /* User menu (header icon + hover dropdown)                            */
 /* ------------------------------------------------------------------ */
@@ -940,6 +976,16 @@ body {
 .leaderboard-head h2 {
   font-size: 1.2rem;
   font-weight: 600;
+}
+
+.leaderboard-guest-note {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.85rem;
+  margin-bottom: 0.9rem;
 }
 
 .leaderboard-cols {

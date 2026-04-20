@@ -70,6 +70,10 @@ export default function App() {
   // Refresh stats whenever user changes.
   useEffect(() => {
     if (!user) { setStats(null); return; }
+    if (user.isGuest) {
+      setStats({ endless_best: 0, completions: { vae: 0 } });
+      return;
+    }
     apiFetch('/api/stats/me')
       .then((r) => r.json())
       .then(setStats)
@@ -140,26 +144,42 @@ export default function App() {
   const handleWin = useCallback(async () => {
     if (winRecordedRef.current || !currentModel || currentModel === 'infinite') return;
     winRecordedRef.current = true;
+    if (user?.isGuest) {
+      setStats((s) => ({
+        endless_best: s?.endless_best ?? 0,
+        completions: { vae: (s?.completions?.vae ?? 0) + 1 },
+      }));
+      return;
+    }
     const updated = await postScore('/api/scores/completion', { model: currentModel });
     if (updated && !updated.__error) setStats(updated);
     else if (updated?.__error) setError(`Score not recorded: ${updated.__error}`);
-  }, [currentModel]);
+  }, [currentModel, user]);
 
   // GameCanvas calls this with distance (in cols) when player dies in infinite mode.
   const handleDeath = useCallback(async (distanceCols) => {
     if (currentModel !== 'infinite') return;
+    if (user?.isGuest) {
+      setStats((s) => ({
+        endless_best: Math.max(s?.endless_best ?? 0, distanceCols),
+        completions: { vae: s?.completions?.vae ?? 0 },
+      }));
+      return;
+    }
     const updated = await postScore('/api/scores/endless', { score: distanceCols });
     if (updated && !updated.__error) setStats(updated);
     else if (updated?.__error) setError(`Score not recorded: ${updated.__error}`);
-  }, [currentModel]);
+  }, [currentModel, user]);
 
   const handleProgress = useCallback((distanceCols) => {
     setEndlessScore(distanceCols);
   }, []);
 
   const handleLogout = async () => {
-    await apiFetch('/api/auth/logout', { method: 'POST' });
-    clearToken();
+    if (!user?.isGuest) {
+      await apiFetch('/api/auth/logout', { method: 'POST' });
+      clearToken();
+    }
     setUser(null);
     setLevel(null);
     setChunks(null);
@@ -240,7 +260,9 @@ export default function App() {
         </section>
       </main>
 
-      {showLeaderboard && <Leaderboard onClose={() => setShowLeaderboard(false)} />}
+      {showLeaderboard && (
+        <Leaderboard isGuest={!!user?.isGuest} onClose={() => setShowLeaderboard(false)} />
+      )}
     </div>
   );
 }
