@@ -97,7 +97,6 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <h1>GenTerrain</h1>
-        <p>Generate Mario-style platformer levels using ML models trained on SuperTux data</p>
       </header>
 
       <main className="app-main">
