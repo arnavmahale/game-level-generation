@@ -684,6 +684,7 @@ body {
   font-weight: 700;
   letter-spacing: -0.02em;
   text-align: center;
+  margin-bottom: 1.75rem;
 }
 
 .auth-tagline {
