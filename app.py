@@ -121,6 +121,19 @@ app.config.update(
 CORS(app, supports_credentials=True)
 
 
+@app.errorhandler(Exception)
+def _json_errors(err):
+    # Flask's default 500 page is HTML; the SPA calls res.json() on responses
+    # and would blow up with a cryptic "string did not match the expected
+    # pattern" in Safari. Always speak JSON so the frontend can surface the
+    # real cause.
+    from werkzeug.exceptions import HTTPException
+    if isinstance(err, HTTPException):
+        return jsonify({"error": err.description}), err.code
+    app.logger.exception("Unhandled error")
+    return jsonify({"error": f"{type(err).__name__}: {err}"}), 500
+
+
 def _require_auth(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):

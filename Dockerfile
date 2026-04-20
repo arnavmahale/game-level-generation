@@ -15,7 +15,7 @@ RUN pip install --no-cache-dir torch==2.2.2+cpu --extra-index-url https://downlo
 
 # Install remaining dependencies
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt || true
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code. No data/ needed at runtime — the reference tile
 # distribution lives inside models/ as a precomputed .npy (see
@@ -31,6 +31,7 @@ COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 # box (HF's Docker SDK expects that port unless overridden via README metadata).
 # Shell-form CMD lets us honor a runtime $PORT override for other hosts.
 ENV PORT=7860
+ENV TURSO_REPLICA_PATH=/tmp/genterrain.db
 EXPOSE 7860
 
 CMD gunicorn --bind 0.0.0.0:${PORT:-7860} --timeout 120 --workers 1 app:app
