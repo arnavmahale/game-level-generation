@@ -6,7 +6,7 @@ const HAZARD_TILE = 6;
 
 const GRAVITY = 0.6;
 const JUMP_FORCE = -13;
-const MOVE_SPEED = 2;
+const MOVE_SPEED = 3;
 const MAX_FALL_SPEED = 12;
 
 // In infinite mode, fetch the next chunk when the player is within this many

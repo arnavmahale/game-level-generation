@@ -27,7 +27,10 @@ COPY models/ ./models/
 # Copy built React frontend
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 
-ENV PORT=8080
-EXPOSE 8080
+# Default to port 7860 so the container runs on Hugging Face Spaces out of the
+# box (HF's Docker SDK expects that port unless overridden via README metadata).
+# Shell-form CMD lets us honor a runtime $PORT override for other hosts.
+ENV PORT=7860
+EXPOSE 7860
 
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--timeout", "120", "--workers", "1", "app:app"]
+CMD gunicorn --bind 0.0.0.0:${PORT:-7860} --timeout 120 --workers 1 app:app
