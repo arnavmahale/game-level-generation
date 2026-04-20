@@ -13,7 +13,7 @@ const MAX_FALL_SPEED = 12;
 // columns of the end of the buffered world.
 const CHUNK_FETCH_LOOKAHEAD_COLS = GRID_WIDTH;
 
-export default function GameCanvas({ level, chunks, onChunkNeeded, onRestart, onWin, onDeath, onProgress }) {
+export default function GameCanvas({ level, chunks, onChunkNeeded, onRestart, onWin, onDeath, onProgress, playable }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const gameStateRef = useRef(null);
@@ -433,10 +433,15 @@ export default function GameCanvas({ level, chunks, onChunkNeeded, onRestart, on
         tabIndex={0}
       />
       <div className="game-controls-hint">
+        {!isInfinite && playable !== undefined && (
+          <span className={`playable-badge ${playable ? 'good' : 'warn'}`}>
+            {playable ? 'Playable' : 'Not playable'}
+          </span>
+        )}
         <span><kbd>A</kbd>/<kbd>D</kbd> Move</span>
         <span><kbd>W</kbd>/<kbd>Space</kbd> Jump</span>
         <span><kbd>R</kbd> Restart</span>
-        <span>{isInfinite ? `Chunks buffered: ${chunkList.length}` : 'Reach the right side to win'}</span>
+        {!isInfinite && <span>Reach the right side to win</span>}
       </div>
     </div>
   );

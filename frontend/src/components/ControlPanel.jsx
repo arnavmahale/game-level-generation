@@ -27,14 +27,13 @@ const DIFFICULTY_LEVELS = [
 export default function ControlPanel({ onGenerate, isLoading }) {
   const [model, setModel] = useState('vae');
   const [difficulty, setDifficulty] = useState(0);
-  const [seed, setSeed] = useState('');
   const [repair, setRepair] = useState(true);
 
   const handleGenerate = () => {
     onGenerate({
       model,
       difficulty,
-      seed: seed === '' ? null : parseInt(seed, 10),
+      seed: null,
       repair,
     });
   };
@@ -83,24 +82,13 @@ export default function ControlPanel({ onGenerate, isLoading }) {
           </div>
 
           <div className="control-section">
-            <h3>Seed <span className="optional">(optional)</span></h3>
-            <input
-              type="number"
-              value={seed}
-              onChange={(e) => setSeed(e.target.value)}
-              placeholder="Random"
-              className="seed-input"
-            />
-          </div>
-
-          <div className="control-section">
             <label className="repair-toggle">
               <input
                 type="checkbox"
                 checked={repair}
                 onChange={(e) => setRepair(e.target.checked)}
               />
-              <span>Apply BFS playability repair</span>
+              <span>Apply playability repair</span>
             </label>
           </div>
         </>
