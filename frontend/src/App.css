@@ -13,8 +13,9 @@
   --text-muted: #8a8fa3;
   --accent: #6b72d8;
   --accent-hover: #7e85e0;
-  --accent-soft: rgba(107, 114, 216, 0.10);
-  --accent-soft-strong: rgba(107, 114, 216, 0.14);
+  --accent-soft: rgba(107, 114, 216, 0.18);
+  --accent-soft-strong: rgba(107, 114, 216, 0.26);
+  --accent-border: rgba(107, 114, 216, 0.55);
   --green: #22c55e;
   --red: #ef4444;
   --orange: #f59e0b;
@@ -152,7 +153,7 @@ body {
 }
 
 .model-option.selected {
-  border-color: var(--border-strong);
+  border-color: var(--accent-border);
   background: var(--accent-soft);
 }
 
@@ -200,7 +201,7 @@ body {
 }
 
 .difficulty-option.selected {
-  border-color: var(--border-strong);
+  border-color: var(--accent-border);
   background: var(--accent-soft);
   color: var(--text);
 }
@@ -382,8 +383,9 @@ body {
 }
 
 .view-tab.active {
-  background: var(--bg-elev);
+  background: var(--accent-soft);
   color: var(--text);
+  border-color: var(--accent-border);
 }
 
 .playable-badge {
@@ -420,11 +422,14 @@ body {
   padding: 1.25rem;
   display: flex;
   flex-direction: column;
+  align-items: center;
+}
+
+.game-stack {
+  display: inline-flex;
+  flex-direction: column;
   gap: 0.9rem;
-  align-items: stretch;
-  width: fit-content;
   max-width: 100%;
-  margin: 0 auto;
 }
 
 .game-canvas {

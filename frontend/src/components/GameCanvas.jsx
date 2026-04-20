@@ -427,20 +427,22 @@ export default function GameCanvas({ level, chunks, onChunkNeeded, onRestart, on
 
   return (
     <div className="game-container" ref={containerRef}>
-      <canvas
-        ref={canvasRef}
-        className="game-canvas"
-        tabIndex={0}
-      />
-      <div className="game-controls-hint">
-        {!isInfinite && playable !== undefined && (
-          <span className={`playable-badge playable-badge-left ${playable ? 'good' : 'warn'}`}>
-            {playable ? 'Playable' : 'Not playable'}
-          </span>
-        )}
-        <span><kbd>A</kbd>/<kbd>D</kbd> Move</span>
-        <span><kbd>W</kbd>/<kbd>Space</kbd> Jump</span>
-        <span><kbd>R</kbd> Restart</span>
+      <div className="game-stack">
+        <canvas
+          ref={canvasRef}
+          className="game-canvas"
+          tabIndex={0}
+        />
+        <div className="game-controls-hint">
+          {!isInfinite && playable !== undefined && (
+            <span className={`playable-badge playable-badge-left ${playable ? 'good' : 'warn'}`}>
+              {playable ? 'Playable' : 'Not playable'}
+            </span>
+          )}
+          <span><kbd>A</kbd>/<kbd>D</kbd> Move</span>
+          <span><kbd>W</kbd>/<kbd>Space</kbd> Jump</span>
+          <span><kbd>R</kbd> Restart</span>
+        </div>
       </div>
     </div>
   );
