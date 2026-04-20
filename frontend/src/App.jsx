@@ -47,6 +47,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [viewMode, setViewMode] = useState('play');
+  const [endlessScore, setEndlessScore] = useState(0);
   const pendingFetchRef = useRef(false);
   const winRecordedRef = useRef(false);
 
@@ -143,6 +144,10 @@ export default function App() {
     if (updated) setStats(updated);
   }, [currentModel]);
 
+  const handleProgress = useCallback((distanceCols) => {
+    setEndlessScore(distanceCols);
+  }, []);
+
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
     setUser(null);
@@ -170,40 +175,54 @@ export default function App() {
 
       <main className="app-main">
         <aside className="sidebar">
+          <ControlPanel onGenerate={handleGenerate} isLoading={isLoading} />
           <UserPanel
             user={user}
             stats={stats}
             onLogout={handleLogout}
-            onShowLeaderboard={() => setShowLeaderboard(true)}
           />
-          <ControlPanel onGenerate={handleGenerate} isLoading={isLoading} />
           <TileLegend />
         </aside>
 
         <section className="content">
           {error && <div className="error-banner">{error}</div>}
-          {!inInfiniteMode && (
-            <div className="view-tabs">
-              <button
-                className={`view-tab ${viewMode === 'play' ? 'active' : ''}`}
-                onClick={() => setViewMode('play')}
-              >
-                Play
-              </button>
-              <button
-                className={`view-tab ${viewMode === 'preview' ? 'active' : ''}`}
-                onClick={() => setViewMode('preview')}
-              >
-                Preview
-              </button>
+          <div className="topbar-row">
+            <div className="topbar-left">
+              {!inInfiniteMode && (
+                <div className="view-tabs">
+                  <button
+                    className={`view-tab ${viewMode === 'play' ? 'active' : ''}`}
+                    onClick={() => setViewMode('play')}
+                  >
+                    Play
+                  </button>
+                  <button
+                    className={`view-tab ${viewMode === 'preview' ? 'active' : ''}`}
+                    onClick={() => setViewMode('preview')}
+                  >
+                    Preview
+                  </button>
+                </div>
+              )}
+              {inInfiniteMode && (
+                <div className="endless-score">
+                  <span className="score-label">Score</span>
+                  <strong className="score-value">{endlessScore}</strong>
+                  <span className="score-hint">best: {stats?.endless_best ?? 0}</span>
+                </div>
+              )}
             </div>
-          )}
+            <button className="leaderboard-btn" onClick={() => setShowLeaderboard(true)}>
+              🏆 Leaderboards
+            </button>
+          </div>
           {inInfiniteMode ? (
             <GameCanvas
               chunks={chunks}
               onChunkNeeded={handleChunkNeeded}
               onRestart={handleInfiniteRestart}
               onDeath={handleDeath}
+              onProgress={handleProgress}
             />
           ) : viewMode === 'play' ? (
             <GameCanvas level={level} onWin={handleWin} />

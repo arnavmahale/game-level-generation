@@ -84,13 +84,25 @@ def get_conn():
 
 
 def _exec(sql, params=()):
-    return get_conn().execute(sql, params)
+    # Pull any remote changes so this thread's replica sees writes made by
+    # other request threads (e.g. a leaderboard read after someone else
+    # scored). Turso sync is fast (~100ms) and the app is low-QPS.
+    conn = get_conn()
+    try:
+        conn.sync()
+    except Exception:
+        pass
+    return conn.execute(sql, params)
 
 
 def _exec_commit(sql, params=()):
     conn = get_conn()
     cur = conn.execute(sql, params)
     conn.commit()
+    try:
+        conn.sync()
+    except Exception:
+        pass
     return cur
 
 
