@@ -15,7 +15,7 @@ from flask_cors import CORS
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts"))
 
-from data_utils import load_levels, train_val_test_split_levels, get_model_path
+from data_utils import get_model_path
 from model_naive import NaiveBaseline
 from model_classical import BigramModel
 from model_deep import (
@@ -24,7 +24,7 @@ from model_deep import (
 )
 from repair import repair as repair_level, enforce_layout
 from evaluate import (
-    distribution_similarity, structural_metrics, check_playability,
+    js_divergence, tile_distribution, structural_metrics, check_playability,
 )
 
 # ---------------------------------------------------------------------------
@@ -48,10 +48,10 @@ class ModelRegistry:
         )
         self.vae.eval()
 
-        # Load training data for JS divergence evaluation. Use the same
-        # train partition the model saw, so JS reflects train-vs-generated.
-        levels = load_levels()
-        self.train_levels, _, _ = train_val_test_split_levels(levels)
+        # Reference tile distribution (pre-computed from the train split by
+        # scripts/build_reference.py). Loading a ~100-byte histogram avoids
+        # shipping the 150MB training JSONL with the deployed container.
+        self.train_tile_dist = np.load(get_model_path("train_tile_dist.npy"))
 
     @classmethod
     def get(cls):
@@ -163,7 +163,7 @@ def generate():
     levels = out[None, ...]
 
     # Compute metrics
-    js = float(distribution_similarity(registry.train_levels, levels))
+    js = float(js_divergence(registry.train_tile_dist, tile_distribution(levels)))
     playable = bool(check_playability(levels[0]))
     struct = structural_metrics(levels)
 
