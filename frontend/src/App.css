@@ -42,13 +42,23 @@ body {
 .app-header {
   padding: 1.5rem 2rem;
   border-bottom: 1px solid var(--border);
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
 }
 
 .app-header h1 {
   font-size: 1.75rem;
   font-weight: 700;
   letter-spacing: -0.02em;
+}
+
+.app-header .user-menu {
+  position: absolute;
+  right: 1.5rem;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .app-header p {
@@ -419,9 +429,15 @@ body {
 .game-controls-hint {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 1rem;
   font-size: 0.8rem;
   color: var(--text-muted);
+}
+
+.game-controls-hint .playable-badge {
+  margin-left: 0;
+  margin-right: 0.25rem;
 }
 
 .game-controls-hint kbd {
@@ -743,57 +759,77 @@ body {
 }
 
 /* ------------------------------------------------------------------ */
-/* User panel                                                          */
+/* User menu (header icon + hover dropdown)                            */
 /* ------------------------------------------------------------------ */
 
-.user-panel {
+.user-menu {
+  position: relative;
+  outline: none;
+}
+
+.user-menu-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 999px;
+  padding: 0.4rem 0.85rem 0.4rem 0.55rem;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.user-menu-trigger:hover {
+  border-color: var(--accent);
+}
+
+.user-menu-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.user-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  min-width: 240px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
   padding: 0.85rem 1rem;
-  margin-bottom: 1rem;
-  display: flex;
+  display: none;
   flex-direction: column;
   gap: 0.6rem;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+  z-index: 50;
 }
 
-.user-row {
+.user-menu:hover .user-menu-dropdown,
+.user-menu:focus-within .user-menu-dropdown {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
 }
 
-.user-name {
-  font-weight: 600;
-  font-size: 0.95rem;
-}
-
-.link-btn {
-  background: transparent;
-  color: var(--accent-hover);
-  border: none;
-  cursor: pointer;
+.dropdown-header {
   font-size: 0.85rem;
-  font-family: inherit;
-  padding: 0;
+  color: var(--text-muted);
 }
 
-.link-btn:hover {
-  text-decoration: underline;
+.dropdown-header strong {
+  color: var(--text);
 }
 
-.link-btn.full {
-  text-align: left;
-  padding: 0.25rem 0;
-}
-
-.stats-block {
+.dropdown-stats {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
   font-size: 0.85rem;
   border-top: 1px solid var(--border);
-  padding-top: 0.55rem;
+  border-bottom: 1px solid var(--border);
+  padding: 0.55rem 0;
 }
 
 .stat-line {
@@ -808,6 +844,38 @@ body {
 .stat-line strong {
   color: var(--text);
   font-variant-numeric: tabular-nums;
+}
+
+.dropdown-logout {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.dropdown-logout:hover {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #ef4444;
+}
+
+.link-btn {
+  background: transparent;
+  color: var(--accent-hover);
+  border: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-family: inherit;
+  padding: 0;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
 }
 
 /* ------------------------------------------------------------------ */

@@ -2,7 +2,6 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import ControlPanel from './components/ControlPanel';
 import LevelCanvas from './components/LevelCanvas';
 import GameCanvas from './components/GameCanvas';
-import TileLegend from './components/TileLegend';
 import AuthPage from './components/AuthPage';
 import UserPanel, { Leaderboard } from './components/UserPanel';
 import { apiFetch, clearToken } from './utils/api';
@@ -182,17 +181,12 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <h1>TerrainGen</h1>
+        <UserPanel user={user} stats={stats} onLogout={handleLogout} />
       </header>
 
       <main className="app-main">
         <aside className="sidebar">
           <ControlPanel onGenerate={handleGenerate} isLoading={isLoading} />
-          <UserPanel
-            user={user}
-            stats={stats}
-            onLogout={handleLogout}
-          />
-          <TileLegend />
         </aside>
 
         <section className="content">
@@ -213,11 +207,6 @@ export default function App() {
                   >
                     Preview
                   </button>
-                  {metrics && (
-                    <span className={`playable-badge ${metrics.playable ? 'good' : 'warn'}`}>
-                      {metrics.playable ? 'Playable' : 'Not playable'}
-                    </span>
-                  )}
                 </div>
               )}
               {inInfiniteMode && (
@@ -229,7 +218,7 @@ export default function App() {
               )}
             </div>
             <button className="leaderboard-btn" onClick={() => setShowLeaderboard(true)}>
-              🏆 Leaderboards
+              🏆 Leaderboard
             </button>
           </div>
           {inInfiniteMode ? (
@@ -241,7 +230,7 @@ export default function App() {
               onProgress={handleProgress}
             />
           ) : viewMode === 'play' ? (
-            <GameCanvas level={level} onWin={handleWin} />
+            <GameCanvas level={level} onWin={handleWin} playable={metrics?.playable} />
           ) : (
             <LevelCanvas level={level} />
           )}
