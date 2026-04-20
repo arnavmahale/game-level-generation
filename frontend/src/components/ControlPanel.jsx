@@ -21,6 +21,12 @@ const MODELS = [
   },
 ];
 
+const DIFFICULTY_LEVELS = [
+  { id: 'easy', label: 'Easy', value: 0 },
+  { id: 'medium', label: 'Medium', value: 50 },
+  { id: 'hard', label: 'Hard', value: 100 },
+];
+
 export default function ControlPanel({ onGenerate, isLoading }) {
   const [model, setModel] = useState('vae');
   const [difficulty, setDifficulty] = useState(50);
@@ -34,14 +40,6 @@ export default function ControlPanel({ onGenerate, isLoading }) {
       seed: seed === '' ? null : parseInt(seed, 10),
       repair,
     });
-  };
-
-  const getDifficultyLabel = () => {
-    if (difficulty <= 20) return 'Very Easy';
-    if (difficulty <= 40) return 'Easy';
-    if (difficulty <= 60) return 'Medium';
-    if (difficulty <= 80) return 'Hard';
-    return 'Very Hard';
   };
 
   return (
@@ -71,22 +69,17 @@ export default function ControlPanel({ onGenerate, isLoading }) {
 
       <div className="control-section">
         <h3>Difficulty</h3>
-        <div className="difficulty-slider-container">
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={difficulty}
-            onChange={(e) => setDifficulty(parseInt(e.target.value, 10))}
-            className="difficulty-slider"
-          />
-          <div className="difficulty-labels">
-            <span>Easy</span>
-            <span className="difficulty-value">
-              {difficulty} — {getDifficultyLabel()}
-            </span>
-            <span>Hard</span>
-          </div>
+        <div className="difficulty-options">
+          {DIFFICULTY_LEVELS.map((d) => (
+            <button
+              key={d.id}
+              type="button"
+              className={`difficulty-option ${difficulty === d.value ? 'selected' : ''}`}
+              onClick={() => setDifficulty(d.value)}
+            >
+              {d.label}
+            </button>
+          ))}
         </div>
       </div>
 

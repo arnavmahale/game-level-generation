@@ -1,16 +1,21 @@
 """
 Structural difficulty scoring + bucketing for conditional VAE.
 
-Score per chunk =
-    0.2 * norm(BFS_jump_count_to_right_edge)
-  + 0.4 * norm(hazards_on_reachable_path)
-  + 0.4 * norm(max_contiguous_empty_column_run)
+Per chunk, compute three 0–1 signals:
+    hazard_rate  = hazards_near_reachable_path / (|reachable| + 1)
+    jumps_rate   = jumps_on_shortest_left→right_path / (|reachable| + 1)
+    gap_severity = min(max_gap_width, 3) / 3          # 3+ cols ≈ unjumpable
 
-Buckets are tertiles of the weighted score across the training set.
+Score = 0.2*jumps_rate + 0.4*hazard_rate + 0.4*gap_severity.
+Buckets are rank-based equal-sized tertiles over *reachable* chunks only.
+Chunks with no reachable starting position are excluded from training —
+they are structurally degenerate and pollute whichever bucket they land in.
 
-Inputs are 8-category levels (as stored on disk). Scoring treats the
-three gameplay categories that matter — walkable (1/2/3), hazard (6),
-and everything else as air — which matches the in-browser physics.
+Why normalization: the previous scoring used raw counts, which scale with
+how much reachable area exists. Content-rich chunks rack up hazards/jumps
+(hard); sparse chunks score near zero (easy). The VAE then learned to
+spam hazards in the 'easy' bucket. Normalizing by reachable area and
+saturating gap width decouples obstacle *intensity* from level *volume*.
 """
 
 from collections import deque
@@ -24,8 +29,9 @@ WALKABLE = (1, 2, 3)
 HAZARD = 6
 MAX_JUMP_HEIGHT = 2
 MAX_JUMP_WIDTH = 2
+GAP_SAT = 3  # gaps wider than this are equally "impossible"
 
-WEIGHTS = (0.2, 0.4, 0.4)  # (jumps, hazards, gap)
+WEIGHTS = (0.2, 0.4, 0.4)  # (jumps_rate, hazard_rate, gap_severity)
 
 
 def _is_walkable_below(level, r, c):
@@ -56,19 +62,14 @@ def _max_gap_width(level):
 
 def bfs_scores(level):
     """
-    Returns (jumps_to_right, hazards_near_path, max_gap_width).
-
-    jumps_to_right: number of jump-type edges on shortest left→right path.
-      0 when the level is unreachable (so unreachable chunks score low on
-      jumps but still score on gap/hazard, which usually drives them hard).
-    hazards_near_path: count of HAZARD tiles within 1 Chebyshev-step of any
-      reachable standing position.
-    max_gap_width: longest run of consecutive columns with no walkable tile.
+    Returns (jumps_to_right, hazards_near_path, max_gap_width, reachable_count).
+    reachable_count = 0 indicates no valid starting position on the left column;
+    the chunk should be excluded from conditional training.
     """
     starts = [(r, 0) for r in range(GRID_HEIGHT) if _is_standing(level, r, 0)]
     gap = _max_gap_width(level)
     if not starts:
-        return 0, 0, gap
+        return 0, 0, gap, 0
 
     jumps_at = {s: 0 for s in starts}
     q = deque(starts)
@@ -117,45 +118,72 @@ def bfs_scores(level):
                     if int(level[nr, nc]) == HAZARD:
                         hazard_cells.add((nr, nc))
 
-    return (right_jumps or 0), len(hazard_cells), gap
+    return (right_jumps or 0), len(hazard_cells), gap, len(jumps_at)
 
 
 def score_levels(levels):
+    """Returns (N, 4) raw features: [jumps, hazards, gap, reachable_count]."""
     return np.array([bfs_scores(l) for l in levels], dtype=np.float32)
 
 
 def assign_buckets(levels, n_buckets=3, weights=WEIGHTS):
     """
-    Returns (buckets, info). `buckets` is (N,) int in [0, n_buckets-1].
-    `info` carries the normalization stats so we can apply them at inference.
+    Returns (buckets, valid_mask, info).
+      buckets: (N,) int. For unreachable chunks, bucket is 0 (placeholder).
+      valid_mask: (N,) bool. True where the chunk should participate in
+        training. Callers must filter levels & buckets by this mask.
+      info: normalization/weights metadata.
     """
     raw = score_levels(levels)
-    lo = raw.min(axis=0)
-    hi = raw.max(axis=0)
-    rng = np.maximum(hi - lo, 1e-6)
-    norm = (raw - lo) / rng
-    score = (norm * np.array(weights, dtype=np.float32)).sum(axis=1)
-    # Rank-based equal-sized buckets — robust to ties at 0 (many chunks have
-    # no hazards and small gaps, so a quantile split on raw score collapses).
-    ranks = np.argsort(np.argsort(score))
-    buckets = np.clip((ranks * n_buckets // len(score)), 0, n_buckets - 1)
+    jumps = raw[:, 0]
+    hazards = raw[:, 1]
+    gap = raw[:, 2]
+    reach = raw[:, 3]
+
+    inv_reach = 1.0 / (reach + 1.0)
+    hazard_rate = hazards * inv_reach
+    jumps_rate = jumps * inv_reach
+    gap_severity = np.minimum(gap, GAP_SAT) / float(GAP_SAT)
+
+    score = (
+        weights[0] * jumps_rate
+        + weights[1] * hazard_rate
+        + weights[2] * gap_severity
+    ).astype(np.float32)
+
+    valid_mask = reach > 0
+    buckets = np.zeros(len(levels), dtype=np.int64)
+
+    # Rank-based equal-sized bucketing over valid chunks only.
+    valid_idx = np.where(valid_mask)[0]
+    if len(valid_idx) > 0:
+        valid_scores = score[valid_idx]
+        ranks = np.argsort(np.argsort(valid_scores))
+        valid_buckets = np.clip((ranks * n_buckets // len(valid_scores)), 0, n_buckets - 1)
+        buckets[valid_idx] = valid_buckets
+
     info = {
-        "lo": lo.tolist(),
-        "hi": hi.tolist(),
         "weights": list(weights),
         "n_buckets": n_buckets,
+        "gap_saturation": GAP_SAT,
+        "n_valid": int(valid_mask.sum()),
+        "n_dropped": int((~valid_mask).sum()),
     }
-    return buckets.astype(np.int64), info
+    return buckets, valid_mask, info
 
 
 if __name__ == "__main__":
     from data_utils import load_levels
     levels = load_levels()
-    buckets, info = assign_buckets(levels)
-    print("bucket counts:", np.bincount(buckets).tolist())
+    buckets, mask, info = assign_buckets(levels)
+    print(f"total: {len(levels)}  valid: {info['n_valid']}  dropped: {info['n_dropped']}")
     print("weights:", info["weights"])
     raw = score_levels(levels)
     for b in range(info["n_buckets"]):
-        mask = buckets == b
-        print(f"  bucket {b}: n={mask.sum():5d} mean(jumps,hazards,gap)="
-              f"({raw[mask, 0].mean():.1f}, {raw[mask, 1].mean():.1f}, {raw[mask, 2].mean():.1f})")
+        sel = (buckets == b) & mask
+        n = sel.sum()
+        j = raw[sel, 0].mean()
+        h = raw[sel, 1].mean()
+        g = raw[sel, 2].mean()
+        r = raw[sel, 3].mean()
+        print(f"  bucket {b}: n={n:5d}  mean jumps={j:.2f}  hazards={h:.2f}  gap={g:.2f}  reach={r:.1f}")
