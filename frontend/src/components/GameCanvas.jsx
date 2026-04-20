@@ -434,14 +434,13 @@ export default function GameCanvas({ level, chunks, onChunkNeeded, onRestart, on
       />
       <div className="game-controls-hint">
         {!isInfinite && playable !== undefined && (
-          <span className={`playable-badge ${playable ? 'good' : 'warn'}`}>
+          <span className={`playable-badge playable-badge-left ${playable ? 'good' : 'warn'}`}>
             {playable ? 'Playable' : 'Not playable'}
           </span>
         )}
         <span><kbd>A</kbd>/<kbd>D</kbd> Move</span>
         <span><kbd>W</kbd>/<kbd>Space</kbd> Jump</span>
         <span><kbd>R</kbd> Restart</span>
-        {!isInfinite && <span>Reach the right side to win</span>}
       </div>
     </div>
   );

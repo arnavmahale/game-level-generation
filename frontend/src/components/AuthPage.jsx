@@ -34,9 +34,6 @@ export default function AuthPage({ onAuth }) {
     <div className="auth-page">
       <div className="auth-card">
         <h1>TerrainGen</h1>
-        <p className="auth-tagline">
-          AI-generated platformer levels. Log in to track your runs.
-        </p>
         <div className="auth-tabs">
           <button
             type="button"

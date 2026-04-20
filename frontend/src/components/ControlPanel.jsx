@@ -27,13 +27,14 @@ const DIFFICULTY_LEVELS = [
 export default function ControlPanel({ onGenerate, isLoading }) {
   const [model, setModel] = useState('vae');
   const [difficulty, setDifficulty] = useState(0);
+  const [seed, setSeed] = useState('');
   const [repair, setRepair] = useState(true);
 
   const handleGenerate = () => {
     onGenerate({
       model,
       difficulty,
-      seed: null,
+      seed: seed === '' ? null : parseInt(seed, 10),
       repair,
     });
   };
@@ -79,6 +80,17 @@ export default function ControlPanel({ onGenerate, isLoading }) {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="control-section">
+            <h3>Seed <span className="optional">(optional)</span></h3>
+            <input
+              type="number"
+              value={seed}
+              onChange={(e) => setSeed(e.target.value)}
+              placeholder="Random"
+              className="seed-input"
+            />
           </div>
 
           <div className="control-section">

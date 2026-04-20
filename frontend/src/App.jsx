@@ -180,7 +180,10 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>TerrainGen</h1>
+        <div className="app-header-title">
+          <h1>TerrainGen</h1>
+          <p className="app-tagline">AI-generated platformer levels.</p>
+        </div>
         <UserPanel user={user} stats={stats} onLogout={handleLogout} />
       </header>
 
