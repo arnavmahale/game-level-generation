@@ -17,11 +17,12 @@ RUN pip install --no-cache-dir torch==2.2.2+cpu --extra-index-url https://downlo
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt || true
 
-# Copy application code
+# Copy application code. No data/ needed at runtime — the reference tile
+# distribution lives inside models/ as a precomputed .npy (see
+# scripts/build_reference.py), so we don't ship the 150MB training JSONL.
 COPY app.py ./
 COPY scripts/ ./scripts/
 COPY models/ ./models/
-COPY data/processed/ ./data/processed/
 
 # Copy built React frontend
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
