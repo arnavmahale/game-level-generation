@@ -15,11 +15,11 @@ export default function UserPanel({ user, stats, onLogout }) {
         </div>
         <div className="dropdown-stats">
           <div className="stat-line">
-            <span>Endless best{isGuest ? ' (session)' : ''}</span>
+            <span>Endless best</span>
             <strong>{stats?.endless_best ?? 0}</strong>
           </div>
           <div className="stat-line">
-            <span>Levels completed{isGuest ? ' (session)' : ''}</span>
+            <span>Levels completed</span>
             <strong>{stats?.completions?.vae ?? 0}</strong>
           </div>
         </div>
@@ -31,7 +31,7 @@ export default function UserPanel({ user, stats, onLogout }) {
   );
 }
 
-export function Leaderboard({ onClose, isGuest = false }) {
+export function Leaderboard({ onClose, isGuest = false, currentUsername = null }) {
   const [endless, setEndless] = useState(null);
   const [err, setErr] = useState(null);
 
@@ -59,13 +59,16 @@ export function Leaderboard({ onClose, isGuest = false }) {
           {endless === null ? <p>Loading…</p> :
             endless.length === 0 ? <p className="empty">No scores yet. Be the first!</p> : (
               <ol>
-                {endless.map((r, i) => (
-                  <li key={i}>
-                    <span className="lb-rank">#{i + 1}</span>
-                    <span className="lb-name">{r.username}</span>
-                    <strong className="lb-score">{r.score}</strong>
-                  </li>
-                ))}
+                {endless.map((r, i) => {
+                  const isMe = currentUsername && r.username === currentUsername;
+                  return (
+                    <li key={i} className={isMe ? 'lb-me' : ''}>
+                      <span className="lb-rank">#{i + 1}</span>
+                      <span className="lb-name">{r.username}{isMe ? ' (you)' : ''}</span>
+                      <strong className="lb-score">{r.score}</strong>
+                    </li>
+                  );
+                })}
               </ol>
             )}
         </div>

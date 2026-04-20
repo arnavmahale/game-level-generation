@@ -261,7 +261,11 @@ export default function App() {
       </main>
 
       {showLeaderboard && (
-        <Leaderboard isGuest={!!user?.isGuest} onClose={() => setShowLeaderboard(false)} />
+        <Leaderboard
+          isGuest={!!user?.isGuest}
+          currentUsername={user?.isGuest ? null : user?.username}
+          onClose={() => setShowLeaderboard(false)}
+        />
       )}
     </div>
   );
