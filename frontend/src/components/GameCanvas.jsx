@@ -263,7 +263,8 @@ export default function GameCanvas({ level, chunks, onChunkNeeded, onRestart, on
         player.vx = 0;
         player.vy = 0;
         setGameStatus('dead');
-        if (onDeath) onDeath();
+        const distanceCols = Math.max(0, Math.floor(player.x / ts));
+        if (onDeath) onDeath(distanceCols);
         if (isInfinite && onRestart) {
           // Replaces the buffered chunks; spawn effect re-runs once the new
           // first chunk arrives and flips status back to 'playing'.

@@ -1,15 +1,18 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import ControlPanel from './components/ControlPanel';
 import LevelCanvas from './components/LevelCanvas';
 import GameCanvas from './components/GameCanvas';
 import MetricsPanel from './components/MetricsPanel';
 import TileLegend from './components/TileLegend';
+import AuthPage from './components/AuthPage';
+import UserPanel, { Leaderboard } from './components/UserPanel';
 import './App.css';
 
 async function fetchChunk({ model = 'vae', difficulty = 50, seed = null, repair = true } = {}) {
   const res = await fetch('/api/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify({ model, difficulty, seed, repair }),
   });
   if (!res.ok) {
@@ -19,19 +22,56 @@ async function fetchChunk({ model = 'vae', difficulty = 50, seed = null, repair 
   return res.json();
 }
 
+async function postScore(path, body) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+
 export default function App() {
+  const [user, setUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [stats, setStats] = useState(null);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+
   const [level, setLevel] = useState(null);
   const [chunks, setChunks] = useState(null);
   const [metrics, setMetrics] = useState(null);
   const [paramsUsed, setParamsUsed] = useState(null);
+  const [currentModel, setCurrentModel] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [viewMode, setViewMode] = useState('play');
   const pendingFetchRef = useRef(false);
+  const winRecordedRef = useRef(false);
+
+  // Check session on mount.
+  useEffect(() => {
+    fetch('/api/auth/me', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setUser(d.user))
+      .catch(() => setUser(null))
+      .finally(() => setAuthChecked(true));
+  }, []);
+
+  // Refresh stats whenever user changes.
+  useEffect(() => {
+    if (!user) { setStats(null); return; }
+    fetch('/api/stats/me', { credentials: 'include' })
+      .then((r) => r.json())
+      .then(setStats)
+      .catch(() => {});
+  }, [user]);
 
   const handleGenerate = async ({ model, difficulty, seed, repair }) => {
     setIsLoading(true);
     setError(null);
+    winRecordedRef.current = false;
     try {
       if (model === 'infinite') {
         const data = await fetchChunk({ model: 'vae', difficulty: 50, seed: null, repair: true });
@@ -39,6 +79,7 @@ export default function App() {
         setLevel(null);
         setMetrics(data.metrics);
         setParamsUsed({ ...data.params_used, mode: 'infinite' });
+        setCurrentModel('infinite');
         setViewMode('play');
       } else {
         const data = await fetchChunk({ model, difficulty, seed, repair });
@@ -46,6 +87,7 @@ export default function App() {
         setChunks(null);
         setMetrics(data.metrics);
         setParamsUsed(data.params_used);
+        setCurrentModel(model);
       }
     } catch (err) {
       setError(err.message);
@@ -58,8 +100,6 @@ export default function App() {
     }
   };
 
-  // Called by GameCanvas when the player nears the right edge of the last chunk.
-  // Idempotent via pendingFetchRef so a slow network doesn't trigger duplicates.
   const handleChunkNeeded = useCallback(async () => {
     if (pendingFetchRef.current) return;
     pendingFetchRef.current = true;
@@ -73,9 +113,6 @@ export default function App() {
     }
   }, []);
 
-  // Called by GameCanvas when the player dies in infinite mode.
-  // Replaces the buffered chunks with a freshly generated one so every death
-  // leads to a never-before-seen level.
   const handleInfiniteRestart = useCallback(async () => {
     if (pendingFetchRef.current) return;
     pendingFetchRef.current = true;
@@ -91,6 +128,38 @@ export default function App() {
     }
   }, []);
 
+  // GameCanvas calls this on win in finite mode. Record once per generated level.
+  const handleWin = useCallback(async () => {
+    if (winRecordedRef.current || !currentModel || currentModel === 'infinite') return;
+    winRecordedRef.current = true;
+    const updated = await postScore('/api/scores/completion', { model: currentModel });
+    if (updated) setStats(updated);
+  }, [currentModel]);
+
+  // GameCanvas calls this with distance (in cols) when player dies in infinite mode.
+  const handleDeath = useCallback(async (distanceCols) => {
+    if (currentModel !== 'infinite') return;
+    const updated = await postScore('/api/scores/endless', { score: distanceCols });
+    if (updated) setStats(updated);
+  }, [currentModel]);
+
+  const handleLogout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+    setUser(null);
+    setLevel(null);
+    setChunks(null);
+    setMetrics(null);
+    setParamsUsed(null);
+    setCurrentModel(null);
+  };
+
+  if (!authChecked) {
+    return <div className="auth-page"><div className="auth-card"><p>Loading…</p></div></div>;
+  }
+  if (!user) {
+    return <AuthPage onAuth={setUser} />;
+  }
+
   const inInfiniteMode = chunks !== null;
 
   return (
@@ -101,6 +170,12 @@ export default function App() {
 
       <main className="app-main">
         <aside className="sidebar">
+          <UserPanel
+            user={user}
+            stats={stats}
+            onLogout={handleLogout}
+            onShowLeaderboard={() => setShowLeaderboard(true)}
+          />
           <ControlPanel onGenerate={handleGenerate} isLoading={isLoading} />
           <TileLegend />
         </aside>
@@ -128,15 +203,18 @@ export default function App() {
               chunks={chunks}
               onChunkNeeded={handleChunkNeeded}
               onRestart={handleInfiniteRestart}
+              onDeath={handleDeath}
             />
           ) : viewMode === 'play' ? (
-            <GameCanvas level={level} />
+            <GameCanvas level={level} onWin={handleWin} />
           ) : (
             <LevelCanvas level={level} />
           )}
           <MetricsPanel metrics={metrics} paramsUsed={paramsUsed} />
         </section>
       </main>
+
+      {showLeaderboard && <Leaderboard onClose={() => setShowLeaderboard(false)} />}
     </div>
   );
 }

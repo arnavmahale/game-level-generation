@@ -8,10 +8,22 @@ Conv-VAE — plus a BFS playability repair post-pass.
 
 import sys
 import os
+import re
+from datetime import timedelta
+from functools import wraps
+
 import numpy as np
 import torch
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, session
 from flask_cors import CORS
+
+# Load .env before anything else so TURSO_* and FLASK_SECRET_KEY are available
+# when the db and Flask session modules initialize.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts"))
 
@@ -26,6 +38,7 @@ from repair import repair as repair_level, enforce_layout
 from evaluate import (
     js_divergence, tile_distribution, structural_metrics, check_playability,
 )
+import db as db_mod
 
 # ---------------------------------------------------------------------------
 # Model registry — loads all models once at startup
@@ -100,7 +113,117 @@ def get_vae_params(difficulty):
 # ---------------------------------------------------------------------------
 
 app = Flask(__name__, static_folder="frontend/dist", static_url_path="")
-CORS(app)
+app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "dev-insecure-key-change-in-prod")
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+)
+CORS(app, supports_credentials=True)
+
+
+USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{3,20}$")
+
+
+def _require_auth(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        uid = session.get("user_id")
+        if not uid:
+            return jsonify({"error": "not authenticated"}), 401
+        return fn(uid, *args, **kwargs)
+    return wrapper
+
+
+@app.route("/api/auth/register", methods=["POST"])
+def auth_register():
+    data = request.get_json() or {}
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    if not USERNAME_RE.match(username):
+        return jsonify({"error": "username must be 3-20 chars: letters, digits, underscore"}), 400
+    if len(password) < 6:
+        return jsonify({"error": "password must be at least 6 characters"}), 400
+    if db_mod.get_user_by_username(username) is not None:
+        return jsonify({"error": "username already taken"}), 409
+    uid = db_mod.create_user(username, password)
+    if uid is None:
+        return jsonify({"error": "could not create user"}), 500
+    session.permanent = True
+    session["user_id"] = uid
+    return jsonify({"user": {"id": uid, "username": username}})
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def auth_login():
+    data = request.get_json() or {}
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    user = db_mod.get_user_by_username(username)
+    if user is None or not db_mod.verify_password(password, user["password_hash"]):
+        return jsonify({"error": "invalid username or password"}), 401
+    session.permanent = True
+    session["user_id"] = user["id"]
+    return jsonify({"user": {"id": user["id"], "username": user["username"]}})
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def auth_logout():
+    session.clear()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/auth/me", methods=["GET"])
+def auth_me():
+    uid = session.get("user_id")
+    if not uid:
+        return jsonify({"user": None})
+    user = db_mod.get_user_by_id(uid)
+    if user is None:
+        session.clear()
+        return jsonify({"user": None})
+    return jsonify({"user": user})
+
+
+@app.route("/api/scores/completion", methods=["POST"])
+@_require_auth
+def score_completion(uid):
+    data = request.get_json() or {}
+    model = data.get("model")
+    if model not in ("naive", "bigram", "vae"):
+        return jsonify({"error": "invalid model"}), 400
+    db_mod.record_completion(uid, model)
+    return jsonify(db_mod.stats_for_user(uid))
+
+
+@app.route("/api/scores/endless", methods=["POST"])
+@_require_auth
+def score_endless(uid):
+    data = request.get_json() or {}
+    try:
+        score = int(data.get("score", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "invalid score"}), 400
+    if score < 0 or score > 1_000_000:
+        return jsonify({"error": "score out of range"}), 400
+    db_mod.record_endless_score(uid, score)
+    return jsonify(db_mod.stats_for_user(uid))
+
+
+@app.route("/api/stats/me", methods=["GET"])
+@_require_auth
+def stats_me(uid):
+    return jsonify(db_mod.stats_for_user(uid))
+
+
+@app.route("/api/leaderboard/vae", methods=["GET"])
+def leaderboard_vae_route():
+    return jsonify({"rows": db_mod.leaderboard_vae()})
+
+
+@app.route("/api/leaderboard/endless", methods=["GET"])
+def leaderboard_endless_route():
+    return jsonify({"rows": db_mod.leaderboard_endless()})
 
 
 @app.route("/api/generate", methods=["POST"])
@@ -226,4 +349,5 @@ if __name__ == "__main__":
     print("Loading models...")
     ModelRegistry.get()
     print("Models loaded. Starting server...")
-    app.run(debug=True, port=5050)
+    debug = os.environ.get("FLASK_DEBUG", "1") != "0"
+    app.run(debug=debug, port=5050)
