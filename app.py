@@ -160,9 +160,13 @@ def auth_register():
         return jsonify({"error": "username is required"}), 400
     if not password:
         return jsonify({"error": "password is required"}), 400
-    if db_mod.get_user_by_username(username) is not None:
-        return jsonify({"error": "username already taken"}), 409
-    uid = db_mod.create_user(username, password)
+    try:
+        if db_mod.get_user_by_username(username) is not None:
+            return jsonify({"error": "username already taken"}), 409
+        uid = db_mod.create_user(username, password)
+    except Exception as e:
+        app.logger.exception("register db error")
+        return jsonify({"error": f"db error: {type(e).__name__}: {e}"}), 500
     if uid is None:
         return jsonify({"error": "could not create user"}), 500
     session.permanent = True
