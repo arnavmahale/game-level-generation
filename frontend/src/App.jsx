@@ -23,14 +23,24 @@ async function fetchChunk({ model = 'vae', difficulty = 50, seed = null, repair 
 }
 
 async function postScore(path, body) {
-  const res = await fetch(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) return null;
-  return res.json();
+  try {
+    const res = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      console.error(`[score] ${path} ${res.status}`, data);
+      return { __error: data.error || `HTTP ${res.status}` };
+    }
+    console.log(`[score] ${path} OK`, data);
+    return data;
+  } catch (e) {
+    console.error(`[score] ${path} threw`, e);
+    return { __error: e.message };
+  }
 }
 
 export default function App() {
@@ -134,14 +144,16 @@ export default function App() {
     if (winRecordedRef.current || !currentModel || currentModel === 'infinite') return;
     winRecordedRef.current = true;
     const updated = await postScore('/api/scores/completion', { model: currentModel });
-    if (updated) setStats(updated);
+    if (updated && !updated.__error) setStats(updated);
+    else if (updated?.__error) setError(`Score not recorded: ${updated.__error}`);
   }, [currentModel]);
 
   // GameCanvas calls this with distance (in cols) when player dies in infinite mode.
   const handleDeath = useCallback(async (distanceCols) => {
     if (currentModel !== 'infinite') return;
     const updated = await postScore('/api/scores/endless', { score: distanceCols });
-    if (updated) setStats(updated);
+    if (updated && !updated.__error) setStats(updated);
+    else if (updated?.__error) setError(`Score not recorded: ${updated.__error}`);
   }, [currentModel]);
 
   const handleProgress = useCallback((distanceCols) => {
