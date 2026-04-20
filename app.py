@@ -119,9 +119,21 @@ def get_vae_params(difficulty):
 
 app = Flask(__name__, static_folder="frontend/dist", static_url_path="")
 app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "dev-insecure-key-change-in-prod")
+# On HF Spaces the app is served inside an iframe on huggingface.co, so its
+# cookies are cross-site. SameSite=Lax cookies are suppressed in that context,
+# which makes POSTs (score recording) fail auth even though login worked.
+# Detect prod by presence of the $PORT env var the Docker image sets, and
+# switch to SameSite=None; Secure so the cookie rides cross-site over HTTPS.
+_is_prod_iframe = bool(os.environ.get("PORT"))
+# Respect the proxy's X-Forwarded-Proto so Flask knows the request is HTTPS
+# even though gunicorn is speaking plain HTTP on the loopback.
+if _is_prod_iframe:
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SAMESITE="None" if _is_prod_iframe else "Lax",
+    SESSION_COOKIE_SECURE=_is_prod_iframe,
     PERMANENT_SESSION_LIFETIME=timedelta(days=30),
 )
 CORS(app, supports_credentials=True)
@@ -151,6 +163,13 @@ def _require_auth(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
         uid = session.get("user_id")
+        app.logger.info(
+            "auth check path=%s cookies=%s session_keys=%s uid=%s",
+            request.path,
+            list(request.cookies.keys()),
+            list(session.keys()),
+            uid,
+        )
         if not uid:
             return jsonify({"error": "not authenticated"}), 401
         return fn(uid, *args, **kwargs)
@@ -204,10 +223,16 @@ def auth_me():
     uid = session.get("user_id")
     if not uid:
         return jsonify({"user": None})
-    user = db_mod.get_user_by_id(uid)
+    # Don't session.clear() on a missed lookup: the embedded Turso replica
+    # on this worker thread may simply be stale from another thread's
+    # insert. Trust the signed cookie, fall back to a minimal user dict.
+    try:
+        user = db_mod.get_user_by_id(uid)
+    except Exception:
+        app.logger.exception("auth_me lookup failed")
+        user = None
     if user is None:
-        session.clear()
-        return jsonify({"user": None})
+        return jsonify({"user": {"id": uid, "username": "you"}})
     return jsonify({"user": user})
 
 
