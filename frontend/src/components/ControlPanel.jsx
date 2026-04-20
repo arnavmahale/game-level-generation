@@ -2,27 +2,15 @@ import { useState } from 'react';
 
 const MODELS = [
   {
-    id: 'naive',
-    name: 'Naive Baseline',
-    desc: 'Random ground fill with learned height',
-    paramLabel: 'height_std',
-  },
-  {
-    id: 'bigram',
-    name: 'Bigram Transitions',
-    desc: 'Learned transition probabilities',
-    paramLabel: 'prior_weight / trans_weight',
-  },
-  {
     id: 'vae',
-    name: 'Convolutional VAE',
-    desc: 'Deep generative model (64-dim latent)',
-    paramLabel: 'temperature',
+    name: 'Levels',
+    desc: 'Conditional Conv-VAE, one level at a time',
+    paramLabel: 'bucket',
   },
   {
     id: 'infinite',
-    name: 'Endless Mode',
-    desc: 'VAE medium, streamed chunk by chunk',
+    name: 'Endless',
+    desc: 'Streamed chunk by chunk, see how far you get',
     paramLabel: 'bucket=medium',
   },
 ];
