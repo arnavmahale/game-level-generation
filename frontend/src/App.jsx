@@ -55,6 +55,7 @@ export default function App() {
   const [error, setError] = useState(null);
   const [viewMode, setViewMode] = useState('play');
   const [endlessScore, setEndlessScore] = useState(0);
+  const [endlessLast, setEndlessLast] = useState(null);
   const pendingFetchRef = useRef(false);
   const winRecordedRef = useRef(false);
 
@@ -159,6 +160,7 @@ export default function App() {
   // GameCanvas calls this with distance (in cols) when player dies in infinite mode.
   const handleDeath = useCallback(async (distanceCols) => {
     if (currentModel !== 'infinite') return;
+    setEndlessLast(distanceCols);
     if (user?.isGuest) {
       setStats((s) => ({
         endless_best: Math.max(s?.endless_best ?? 0, distanceCols),
@@ -236,7 +238,10 @@ export default function App() {
                 <div className="endless-score">
                   <span className="score-label">Score</span>
                   <strong className="score-value">{endlessScore}</strong>
-                  <span className="score-hint">best: {stats?.endless_best ?? 0}</span>
+                  <span className="score-hint">
+                    best: {stats?.endless_best ?? 0}
+                    {endlessLast !== null && <> · last: {endlessLast}</>}
+                  </span>
                 </div>
               )}
             </div>
