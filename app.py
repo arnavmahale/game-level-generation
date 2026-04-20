@@ -142,8 +142,8 @@ def auth_register():
     password = data.get("password") or ""
     if not USERNAME_RE.match(username):
         return jsonify({"error": "username must be 3-20 chars: letters, digits, underscore"}), 400
-    if len(password) < 6:
-        return jsonify({"error": "password must be at least 6 characters"}), 400
+    if not password:
+        return jsonify({"error": "password is required"}), 400
     if db_mod.get_user_by_username(username) is not None:
         return jsonify({"error": "username already taken"}), 409
     uid = db_mod.create_user(username, password)
