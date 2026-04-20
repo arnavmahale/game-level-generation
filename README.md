@@ -1,5 +1,5 @@
 ---
-title: Genterrain
+title: TerrainGen
 emoji: 📉
 colorFrom: blue
 colorTo: yellow
@@ -7,7 +7,7 @@ sdk: docker
 pinned: false
 ---
 
-# GenTerrain
+# TerrainGen
 
 Generative models that produce playable 2D platformer levels in the style of *SuperTux* / Super Mario Bros. Three models (naive baseline, bigram transitions, conditional Conv-VAE) are trained on ~15k 20×40 chunks mined from 110 hand-crafted SuperTux levels, with a BFS playability repair post-pass and a fixed sky/floor layout enforcement.
 
