@@ -421,7 +421,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
-  align-items: center;
+  align-items: stretch;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
 }
 
 .game-canvas {
