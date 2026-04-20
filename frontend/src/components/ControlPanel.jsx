@@ -19,6 +19,12 @@ const MODELS = [
     desc: 'Deep generative model (64-dim latent)',
     paramLabel: 'temperature',
   },
+  {
+    id: 'infinite',
+    name: 'Endless Mode',
+    desc: 'VAE medium, streamed chunk by chunk',
+    paramLabel: 'bucket=medium',
+  },
 ];
 
 const DIFFICULTY_LEVELS = [
@@ -67,43 +73,47 @@ export default function ControlPanel({ onGenerate, isLoading }) {
         </div>
       </div>
 
-      <div className="control-section">
-        <h3>Difficulty</h3>
-        <div className="difficulty-options">
-          {DIFFICULTY_LEVELS.map((d) => (
-            <button
-              key={d.id}
-              type="button"
-              className={`difficulty-option ${difficulty === d.value ? 'selected' : ''}`}
-              onClick={() => setDifficulty(d.value)}
-            >
-              {d.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      {model !== 'infinite' && (
+        <>
+          <div className="control-section">
+            <h3>Difficulty</h3>
+            <div className="difficulty-options">
+              {DIFFICULTY_LEVELS.map((d) => (
+                <button
+                  key={d.id}
+                  type="button"
+                  className={`difficulty-option ${difficulty === d.value ? 'selected' : ''}`}
+                  onClick={() => setDifficulty(d.value)}
+                >
+                  {d.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-      <div className="control-section">
-        <h3>Seed <span className="optional">(optional)</span></h3>
-        <input
-          type="number"
-          value={seed}
-          onChange={(e) => setSeed(e.target.value)}
-          placeholder="Random"
-          className="seed-input"
-        />
-      </div>
+          <div className="control-section">
+            <h3>Seed <span className="optional">(optional)</span></h3>
+            <input
+              type="number"
+              value={seed}
+              onChange={(e) => setSeed(e.target.value)}
+              placeholder="Random"
+              className="seed-input"
+            />
+          </div>
 
-      <div className="control-section">
-        <label className="repair-toggle">
-          <input
-            type="checkbox"
-            checked={repair}
-            onChange={(e) => setRepair(e.target.checked)}
-          />
-          <span>Apply BFS playability repair</span>
-        </label>
-      </div>
+          <div className="control-section">
+            <label className="repair-toggle">
+              <input
+                type="checkbox"
+                checked={repair}
+                onChange={(e) => setRepair(e.target.checked)}
+              />
+              <span>Apply BFS playability repair</span>
+            </label>
+          </div>
+        </>
+      )}
 
       <button
         className="generate-btn"
@@ -111,9 +121,11 @@ export default function ControlPanel({ onGenerate, isLoading }) {
         disabled={isLoading}
       >
         {isLoading ? (
-          <span className="loading-spinner">Generating...</span>
+          <span className="loading-spinner">
+            {model === 'infinite' ? 'Starting…' : 'Generating...'}
+          </span>
         ) : (
-          'Generate Level'
+          model === 'infinite' ? 'Start Endless Mode' : 'Generate Level'
         )}
       </button>
     </div>

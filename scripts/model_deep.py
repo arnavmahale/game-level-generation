@@ -28,6 +28,10 @@ from repair import enforce_layout
 
 NUM_CLASSES = 3  # 0=empty, 1=solid, 2=hazard
 N_BUCKETS = 3
+NULL_BUCKET = N_BUCKETS  # extra slot (index 3) used for unconditional passes
+N_COND_SLOTS = N_BUCKETS + 1  # one-hot dim fed to the decoder
+P_UNCOND = 0.15  # fraction of training steps where conditioning is dropped
+DEFAULT_GUIDANCE_SCALE = 2.0
 
 
 def pick_device():
@@ -92,6 +96,8 @@ class ConvVAE(nn.Module):
         self.latent_dim = latent_dim
         self.n_classes = n_classes
         self.n_buckets = n_buckets
+        # One extra one-hot slot for the unconditional (null) bucket used by CFG.
+        self.n_cond_slots = n_buckets + 1
 
         self.encoder = nn.Sequential(
             nn.Conv2d(n_classes, 64, 3, stride=2, padding=1),
@@ -109,7 +115,7 @@ class ConvVAE(nn.Module):
         self.fc_mu = nn.Linear(256 * 5 * 10, latent_dim)
         self.fc_logvar = nn.Linear(256 * 5 * 10, latent_dim)
 
-        self.fc_decode = nn.Linear(latent_dim + n_buckets, 256 * 5 * 10)
+        self.fc_decode = nn.Linear(latent_dim + self.n_cond_slots, 256 * 5 * 10)
         self.decoder = nn.Sequential(
             ResBlock(256),
             nn.ConvTranspose2d(256, 128, 3, stride=1, padding=1),
@@ -133,10 +139,11 @@ class ConvVAE(nn.Module):
         return mu + eps * std
 
     def decode(self, z, bucket):
-        """bucket: (B,) long or (B, n_buckets) float. Conditioning is
-        concatenated onto z before the decoder projection."""
+        """bucket: (B,) long in [0, n_cond_slots-1] or (B, n_cond_slots) float.
+        The highest index (self.n_buckets) is the unconditional/null slot used
+        for classifier-free guidance."""
         if bucket.dim() == 1:
-            cond = F.one_hot(bucket, num_classes=self.n_buckets).float()
+            cond = F.one_hot(bucket, num_classes=self.n_cond_slots).float()
         else:
             cond = bucket.float()
         zc = torch.cat([z, cond], dim=1)
@@ -220,6 +227,12 @@ def train_vae(levels_8c, epochs=150, batch_size=64, lr=1e-3, beta=0.1, latent_di
         train_loss = 0
         for x, target, bucket in train_loader:
             x, target, bucket = x.to(device), target.to(device), bucket.to(device)
+            # Classifier-free guidance: randomly replace the real bucket with
+            # the null bucket so the decoder also learns an unconditional
+            # distribution. At inference we combine conditional + unconditional
+            # logits to sharpen the conditioning effect.
+            drop = torch.rand(bucket.size(0), device=device) < P_UNCOND
+            bucket = torch.where(drop, torch.full_like(bucket, NULL_BUCKET), bucket)
             recon, mu, logvar = model(x, bucket)
             loss, ce, kl = vae_loss(recon, target, mu, logvar, class_weights, beta)
             optimizer.zero_grad()
@@ -251,9 +264,15 @@ def train_vae(levels_8c, epochs=150, batch_size=64, lr=1e-3, beta=0.1, latent_di
     return model, info
 
 
-def generate_levels(model, n=1, bucket=1, temperature=1.0, seed=None, device=None):
+def generate_levels(
+    model, n=1, bucket=1, temperature=1.0, seed=None, device=None,
+    guidance_scale=DEFAULT_GUIDANCE_SCALE,
+):
     """
     bucket: int in [0, n_buckets-1] (easy/med/hard) — required conditioning.
+    guidance_scale: classifier-free guidance strength. 0 = unconditional,
+        1 = pure conditional, >1 extrapolates away from unconditional
+        (sharper bucket signal, standard range 1.5–4.0).
     Returns 3-class arrays (values in {0, 1, 2}).
     """
     if device is None:
@@ -266,7 +285,13 @@ def generate_levels(model, n=1, bucket=1, temperature=1.0, seed=None, device=Non
     with torch.no_grad():
         z = torch.randn(n, model.latent_dim).to(device)
         bucket_ids = torch.full((n,), int(bucket), dtype=torch.long, device=device)
-        logits = model.decode(z, bucket_ids)
+        logits_cond = model.decode(z, bucket_ids)
+        if guidance_scale == 1.0:
+            logits = logits_cond
+        else:
+            null_ids = torch.full((n,), NULL_BUCKET, dtype=torch.long, device=device)
+            logits_uncond = model.decode(z, null_ids)
+            logits = logits_uncond + guidance_scale * (logits_cond - logits_uncond)
         probs = F.softmax(logits / temperature, dim=1)
         b, c, h, w = probs.shape
         probs_flat = probs.permute(0, 2, 3, 1).reshape(-1, c)

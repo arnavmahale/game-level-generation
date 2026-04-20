@@ -88,7 +88,11 @@ def get_vae_params(difficulty):
     """
     bucket = min(N_BUCKETS - 1, (difficulty * N_BUCKETS) // 101)
     labels = {0: "easy", 1: "medium", 2: "hard"}
-    return {"bucket": int(bucket), "bucket_label": labels.get(bucket, str(bucket))}
+    return {
+        "bucket": int(bucket),
+        "bucket_label": labels.get(bucket, str(bucket)),
+        "guidance_scale": 2.0,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -135,6 +139,7 @@ def generate():
         levels_3c = vae_generate(
             registry.vae, n=1, bucket=p["bucket"],
             seed=seed, device=registry.device,
+            guidance_scale=p["guidance_scale"],
         )
         levels = np.stack([three_class_to_api(levels_3c[0])])
 
