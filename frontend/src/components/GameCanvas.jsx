@@ -1,27 +1,34 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { GRID_HEIGHT, GRID_WIDTH } from '../utils/colors';
 
-// Tile categories that are solid (walkable)
 const SOLID_TILES = new Set([1, 2, 3]); // solid, slope, platform
 const HAZARD_TILE = 6;
 
-// Player physics constants
 const GRAVITY = 0.6;
 const JUMP_FORCE = -13;
 const MOVE_SPEED = 2;
 const MAX_FALL_SPEED = 12;
 
-export default function GameCanvas({ level, onWin, onDeath }) {
+// In infinite mode, fetch the next chunk when the player is within this many
+// columns of the end of the buffered world.
+const CHUNK_FETCH_LOOKAHEAD_COLS = GRID_WIDTH;
+
+export default function GameCanvas({ level, chunks, onChunkNeeded, onRestart, onWin, onDeath }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const gameStateRef = useRef(null);
   const keysRef = useRef({});
   const animFrameRef = useRef(null);
   const imagesRef = useRef({ loaded: false });
-  const [gameStatus, setGameStatus] = useState('waiting'); // waiting, playing, won, dead
+  const [gameStatus, setGameStatus] = useState('waiting');
   const [tileSize, setTileSize] = useState(32);
 
-  // Load sprite images
+  const isInfinite = Array.isArray(chunks);
+  // In single-level mode, build a one-chunk virtual chunks list so the rest
+  // of the code can treat both modes uniformly.
+  const chunkList = isInfinite ? chunks : (level ? [level] : null);
+  const worldCols = chunkList ? chunkList.length * GRID_WIDTH : 0;
+
   useEffect(() => {
     const assets = new Image();
     assets.src = '/assets/assets.png';
@@ -42,11 +49,10 @@ export default function GameCanvas({ level, onWin, onDeath }) {
     char.onload = onLoad;
   }, []);
 
-  // Calculate tile size based on container
   useEffect(() => {
     if (!containerRef.current) return;
     const updateSize = () => {
-      const w = containerRef.current.clientWidth - 2; // account for border
+      const w = containerRef.current.clientWidth - 2;
       const computed = Math.floor(w / GRID_WIDTH);
       setTileSize(Math.max(12, Math.min(32, computed)));
     };
@@ -55,36 +61,24 @@ export default function GameCanvas({ level, onWin, onDeath }) {
     return () => window.removeEventListener('resize', updateSize);
   }, []);
 
-  // Initialize game state when level changes
+  // Initialize spawn position from the first chunk.
   useEffect(() => {
-    if (!level) return;
+    if (!chunkList || chunkList.length === 0) return;
+    const firstChunk = chunkList[0];
 
-    // Find a valid spawn position (leftmost column, find a spot to stand)
     let spawnRow = 0;
-    for (let r = 0; r < GRID_HEIGHT - 1; r++) {
-      if (!SOLID_TILES.has(level[r][0]) && level[r][0] !== HAZARD_TILE &&
-          SOLID_TILES.has(level[r + 1][0])) {
-        spawnRow = r;
-        break;
-      }
-    }
-    // If no valid spawn on col 0, try col 1, 2, etc.
     let spawnCol = 0;
-    if (spawnRow === 0) {
-      for (let c = 0; c < 5; c++) {
-        for (let r = 0; r < GRID_HEIGHT - 1; r++) {
-          if (!SOLID_TILES.has(level[r][c]) && level[r][c] !== HAZARD_TILE &&
-              SOLID_TILES.has(level[r + 1][c])) {
-            spawnRow = r;
-            spawnCol = c;
-            break;
-          }
+    outer: for (let c = 0; c < 5; c++) {
+      for (let r = 0; r < GRID_HEIGHT - 1; r++) {
+        if (!SOLID_TILES.has(firstChunk[r][c]) && firstChunk[r][c] !== HAZARD_TILE &&
+            SOLID_TILES.has(firstChunk[r + 1][c])) {
+          spawnRow = r;
+          spawnCol = c;
+          break outer;
         }
-        if (spawnRow > 0) break;
       }
     }
-    // Fallback: spawn at top-left
-    if (spawnRow === 0) spawnRow = 2;
+    if (spawnRow === 0 && spawnCol === 0) spawnRow = 2;
 
     gameStateRef.current = {
       x: spawnCol * tileSize + tileSize * 0.1,
@@ -98,9 +92,11 @@ export default function GameCanvas({ level, onWin, onDeath }) {
       spawnY: spawnRow * tileSize,
     };
     setGameStatus('playing');
-  }, [level, tileSize]);
+    // Only reset when the underlying world identity changes, not on every
+    // chunk append — otherwise infinite mode would reset on each new chunk.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chunkList && chunkList[0], tileSize]);
 
-  // Keyboard input
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'Space', 'KeyA', 'KeyD', 'KeyW', 'KeyR'].includes(e.code)) {
@@ -119,22 +115,29 @@ export default function GameCanvas({ level, onWin, onDeath }) {
     };
   }, []);
 
-  // Check if a point collides with a solid tile
-  const isSolid = useCallback((gridCol, gridRow) => {
-    if (gridRow < 0 || gridRow >= GRID_HEIGHT || gridCol < 0 || gridCol >= GRID_WIDTH) {
-      return gridRow >= GRID_HEIGHT; // bottom of world is solid
-    }
-    return SOLID_TILES.has(level[gridRow][gridCol]);
-  }, [level]);
+  // World-coordinate tile lookup that spans all buffered chunks.
+  const tileAt = useCallback((worldCol, row) => {
+    if (!chunkList) return 0;
+    if (row < 0 || row >= GRID_HEIGHT) return 0;
+    if (worldCol < 0 || worldCol >= worldCols) return 0;
+    const chunkIdx = Math.floor(worldCol / GRID_WIDTH);
+    const col = worldCol - chunkIdx * GRID_WIDTH;
+    return chunkList[chunkIdx][row][col];
+  }, [chunkList, worldCols]);
 
-  const isHazard = useCallback((gridCol, gridRow) => {
-    if (gridRow < 0 || gridRow >= GRID_HEIGHT || gridCol < 0 || gridCol >= GRID_WIDTH) return false;
-    return level[gridRow][gridCol] === HAZARD_TILE;
-  }, [level]);
+  const isSolid = useCallback((worldCol, row) => {
+    if (row >= GRID_HEIGHT) return true; // bottom of world
+    if (worldCol < 0) return true;       // left wall only
+    if (!isInfinite && worldCol >= GRID_WIDTH) return false;
+    return SOLID_TILES.has(tileAt(worldCol, row));
+  }, [tileAt, isInfinite]);
 
-  // Game loop
+  const isHazard = useCallback((worldCol, row) => {
+    return tileAt(worldCol, row) === HAZARD_TILE;
+  }, [tileAt]);
+
   useEffect(() => {
-    if (!level || !canvasRef.current) return;
+    if (!chunkList || !canvasRef.current) return;
     if (gameStatus !== 'playing' && gameStatus !== 'won' && gameStatus !== 'dead') return;
 
     const canvas = canvasRef.current;
@@ -150,7 +153,6 @@ export default function GameCanvas({ level, onWin, onDeath }) {
 
       const keys = keysRef.current;
 
-      // Handle restart
       if (keys['KeyR']) {
         player.x = player.spawnX;
         player.y = player.spawnY;
@@ -159,22 +161,21 @@ export default function GameCanvas({ level, onWin, onDeath }) {
         setGameStatus('playing');
       }
 
-      const isFrozen = gameStatus === 'won';
+      // Freeze physics while waiting for a new infinite-mode chunk to arrive,
+      // so input doesn't drift the player off-world during the fetch.
+      const isFrozen = gameStatus === 'won' || (isInfinite && gameStatus === 'dead');
 
-      // Horizontal movement
       player.vx = 0;
       if (!isFrozen) {
         if (keys['ArrowLeft'] || keys['KeyA']) player.vx = -MOVE_SPEED;
         if (keys['ArrowRight'] || keys['KeyD']) player.vx = MOVE_SPEED;
       }
 
-      // Jump
       if (!isFrozen && (keys['ArrowUp'] || keys['Space'] || keys['KeyW']) && player.onGround) {
         player.vy = JUMP_FORCE;
         player.onGround = false;
       }
 
-      // Gravity
       if (!isFrozen) {
         player.vy += GRAVITY;
         if (player.vy > MAX_FALL_SPEED) player.vy = MAX_FALL_SPEED;
@@ -182,16 +183,14 @@ export default function GameCanvas({ level, onWin, onDeath }) {
         player.vy = 0;
       }
 
-      // Move horizontally with collision
       player.x += player.vx;
       const pw = player.width;
       const ph = player.height;
 
-      // Clamp to world bounds
       if (player.x < 0) player.x = 0;
-      if (player.x + pw > GRID_WIDTH * ts) player.x = GRID_WIDTH * ts - pw;
+      const worldPxWidth = worldCols * ts;
+      if (!isInfinite && player.x + pw > worldPxWidth) player.x = worldPxWidth - pw;
 
-      // Horizontal collision
       if (player.vx > 0) {
         const rightCol = Math.floor((player.x + pw) / ts);
         const topRow = Math.floor(player.y / ts);
@@ -216,12 +215,10 @@ export default function GameCanvas({ level, onWin, onDeath }) {
         }
       }
 
-      // Move vertically with collision
       player.y += player.vy;
       player.onGround = false;
 
       if (player.vy > 0) {
-        // Falling down
         const leftCol = Math.floor(player.x / ts);
         const rightCol = Math.floor((player.x + pw - 1) / ts);
         const botRow = Math.floor((player.y + ph) / ts);
@@ -234,7 +231,6 @@ export default function GameCanvas({ level, onWin, onDeath }) {
           }
         }
       } else if (player.vy < 0) {
-        // Moving up (jumping)
         const leftCol = Math.floor(player.x / ts);
         const rightCol = Math.floor((player.x + pw - 1) / ts);
         const topRow = Math.floor(player.y / ts);
@@ -247,56 +243,71 @@ export default function GameCanvas({ level, onWin, onDeath }) {
         }
       }
 
-      // Check hazard collision
       const pLeft = Math.floor(player.x / ts);
       const pRight = Math.floor((player.x + pw - 1) / ts);
       const pTop = Math.floor(player.y / ts);
       const pBot = Math.floor((player.y + ph - 1) / ts);
-      for (let r = pTop; r <= pBot; r++) {
+      let died = false;
+      for (let r = pTop; r <= pBot && !died; r++) {
         for (let c = pLeft; c <= pRight; c++) {
           if (isHazard(c, r)) {
-            // Death — respawn
-            player.x = player.spawnX;
-            player.y = player.spawnY;
-            player.vx = 0;
-            player.vy = 0;
-            setGameStatus('dead');
-            if (onDeath) onDeath();
-            setTimeout(() => setGameStatus('playing'), 500);
+            died = true;
             break;
           }
         }
       }
-
-      // Fell off bottom
-      if (player.y > GRID_HEIGHT * ts + 50) {
-        player.x = player.spawnX;
-        player.y = player.spawnY;
+      if (!died && player.y > GRID_HEIGHT * ts + 50) {
+        died = true;
+      }
+      if (died && gameStatus !== 'dead') {
         player.vx = 0;
         player.vy = 0;
         setGameStatus('dead');
         if (onDeath) onDeath();
-        setTimeout(() => setGameStatus('playing'), 500);
+        if (isInfinite && onRestart) {
+          // Replaces the buffered chunks; spawn effect re-runs once the new
+          // first chunk arrives and flips status back to 'playing'.
+          onRestart();
+        } else {
+          player.x = player.spawnX;
+          player.y = player.spawnY;
+          setTimeout(() => setGameStatus('playing'), 500);
+        }
       }
 
-      // Win condition — reach rightmost area
-      if (!isFrozen && player.x + pw >= (GRID_WIDTH - 1) * ts) {
+      // Win only applies to finite mode.
+      if (!isInfinite && !isFrozen && player.x + pw >= (GRID_WIDTH - 1) * ts) {
         setGameStatus('won');
         if (onWin) onWin();
+      }
+
+      // Infinite mode: trigger a fetch when entering the final chunk's last viewport.
+      if (isInfinite && onChunkNeeded) {
+        const playerCol = Math.floor(player.x / ts);
+        const needFetchAt = worldCols - CHUNK_FETCH_LOOKAHEAD_COLS;
+        if (playerCol >= needFetchAt) {
+          onChunkNeeded();
+        }
+      }
+
+      // ===== CAMERA =====
+      // Keep the player near the left-third of the viewport in infinite mode.
+      let camX = 0;
+      if (isInfinite) {
+        const viewportW = canvas.width;
+        camX = Math.max(0, player.x - viewportW * 0.35);
+        const maxCam = Math.max(0, worldCols * ts - viewportW);
+        camX = Math.min(camX, maxCam);
       }
 
       // ===== RENDER =====
       const imgs = imagesRef.current;
 
-      // Background
       if (imgs.loaded) {
-        // Draw background scaled to canvas, tiled if needed
         const bgRatio = imgs.bg.height / (GRID_HEIGHT * ts);
         const bgDrawWidth = imgs.bg.width / bgRatio;
-        // Parallax: slight shift based on player position
         const parallaxX = -(player.x / (GRID_WIDTH * ts)) * (bgDrawWidth - canvas.width) * 0.5;
         ctx.drawImage(imgs.bg, parallaxX, 0, bgDrawWidth, GRID_HEIGHT * ts);
-        // Fill remaining width if needed
         if (parallaxX + bgDrawWidth < canvas.width) {
           ctx.drawImage(imgs.bg, parallaxX + bgDrawWidth, 0, bgDrawWidth, GRID_HEIGHT * ts);
         }
@@ -305,24 +316,23 @@ export default function GameCanvas({ level, onWin, onDeath }) {
         ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
 
-      // Draw tiles
+      // Draw only tiles inside the viewport.
+      const firstCol = Math.max(0, Math.floor(camX / ts));
+      const lastCol = Math.min(worldCols - 1, Math.ceil((camX + canvas.width) / ts));
       for (let row = 0; row < GRID_HEIGHT; row++) {
-        for (let col = 0; col < GRID_WIDTH; col++) {
-          const tile = level[row][col];
-          if (tile === 0) continue; // air — show background
+        for (let col = firstCol; col <= lastCol; col++) {
+          const tile = tileAt(col, row);
+          if (tile === 0) continue;
 
-          const x = col * ts;
+          const x = col * ts - camX;
           const y = row * ts;
 
           if (imgs.loaded) {
             if (SOLID_TILES.has(tile)) {
-              // Dirt block — left half of assets.png (0,0 to 100,100)
               ctx.drawImage(imgs.assets, 0, 0, 100, 100, x, y, ts, ts);
             } else if (tile === HAZARD_TILE) {
-              // Lava — right half of assets.png (100,0 to 200,100)
               ctx.drawImage(imgs.assets, 100, 0, 100, 100, x, y, ts, ts);
             } else if (tile === 4) {
-              // Bonus — gold coin style
               ctx.fillStyle = '#FFD700';
               ctx.fillRect(x, y, ts, ts);
               ctx.fillStyle = '#FFA500';
@@ -330,21 +340,17 @@ export default function GameCanvas({ level, onWin, onDeath }) {
               ctx.arc(x + ts / 2, y + ts / 2, ts * 0.3, 0, Math.PI * 2);
               ctx.fill();
             } else if (tile === 5) {
-              // Water
               ctx.fillStyle = 'rgba(30, 100, 200, 0.7)';
               ctx.fillRect(x, y, ts, ts);
-              // Wave effect
               ctx.fillStyle = 'rgba(100, 180, 255, 0.4)';
               ctx.fillRect(x, y, ts, ts * 0.3);
             } else if (tile === 7) {
-              // Decoration — greenery
               ctx.fillStyle = '#2d8a4e';
               ctx.fillRect(x, y, ts, ts);
               ctx.fillStyle = '#3cb371';
               ctx.fillRect(x + 2, y + 2, ts - 4, ts - 4);
             }
           } else {
-            // Fallback colored squares
             const colors = {
               1: '#8B4513', 2: '#D2B48C', 3: '#DEB887',
               4: '#FFD700', 5: '#4169E1', 6: '#DC143C', 7: '#228B22',
@@ -355,25 +361,25 @@ export default function GameCanvas({ level, onWin, onDeath }) {
         }
       }
 
-      // Draw finish line at rightmost column — pure black/white checkerboard
-      const finishX = (GRID_WIDTH - 1) * ts;
-      const checkSize = ts / 2;
-      for (let r = 0; r < GRID_HEIGHT * 2; r++) {
-        for (let c = 0; c < 2; c++) {
-          ctx.fillStyle = (r + c) % 2 === 0 ? '#ffffff' : '#000000';
-          ctx.fillRect(finishX + c * checkSize, r * checkSize, checkSize, checkSize);
+      // Finish line only in finite mode.
+      if (!isInfinite) {
+        const finishX = (GRID_WIDTH - 1) * ts - camX;
+        const checkSize = ts / 2;
+        for (let r = 0; r < GRID_HEIGHT * 2; r++) {
+          for (let c = 0; c < 2; c++) {
+            ctx.fillStyle = (r + c) % 2 === 0 ? '#ffffff' : '#000000';
+            ctx.fillRect(finishX + c * checkSize, r * checkSize, checkSize, checkSize);
+          }
         }
       }
 
-      // Draw player
       if (imgs.loaded) {
-        ctx.drawImage(imgs.char, player.x, player.y, pw, ph);
+        ctx.drawImage(imgs.char, player.x - camX, player.y, pw, ph);
       } else {
         ctx.fillStyle = '#ff6600';
-        ctx.fillRect(player.x, player.y, pw, ph);
+        ctx.fillRect(player.x - camX, player.y, pw, ph);
       }
 
-      // Game status overlay
       if (gameStatus === 'won') {
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -396,16 +402,9 @@ export default function GameCanvas({ level, onWin, onDeath }) {
     return () => {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     };
-  }, [level, gameStatus, tileSize, isSolid, isHazard, onWin, onDeath]);
+  }, [chunkList, gameStatus, tileSize, isSolid, isHazard, tileAt, worldCols, isInfinite, onChunkNeeded, onRestart, onWin, onDeath]);
 
-  // Render initial frame when level loads (for won state too)
-  useEffect(() => {
-    if (gameStatus === 'won' && canvasRef.current) {
-      // Keep the last frame visible
-    }
-  }, [gameStatus]);
-
-  if (!level) {
+  if (!chunkList || chunkList.length === 0) {
     return (
       <div className="game-container" ref={containerRef}>
         <div className="game-placeholder">
@@ -426,7 +425,7 @@ export default function GameCanvas({ level, onWin, onDeath }) {
         <span><kbd>A</kbd>/<kbd>D</kbd> Move</span>
         <span><kbd>W</kbd>/<kbd>Space</kbd> Jump</span>
         <span><kbd>R</kbd> Restart</span>
-        <span>Reach the right side to win</span>
+        <span>{isInfinite ? `Chunks buffered: ${chunkList.length}` : 'Reach the right side to win'}</span>
       </div>
     </div>
   );

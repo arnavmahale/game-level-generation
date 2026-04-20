@@ -28,6 +28,19 @@ from repair import enforce_layout
 
 NUM_CLASSES = 3  # 0=empty, 1=solid, 2=hazard
 N_BUCKETS = 3
+NULL_BUCKET = N_BUCKETS  # extra slot (index 3) used for unconditional passes
+N_COND_SLOTS = N_BUCKETS + 1  # one-hot dim fed to the decoder
+P_UNCOND = 0.15  # fraction of training steps where conditioning is dropped
+DEFAULT_GUIDANCE_SCALE = 2.0
+
+
+def pick_device():
+    """Prefer CUDA > Apple MPS > CPU."""
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
 
 
 def to_three_class(levels):
@@ -83,6 +96,8 @@ class ConvVAE(nn.Module):
         self.latent_dim = latent_dim
         self.n_classes = n_classes
         self.n_buckets = n_buckets
+        # One extra one-hot slot for the unconditional (null) bucket used by CFG.
+        self.n_cond_slots = n_buckets + 1
 
         self.encoder = nn.Sequential(
             nn.Conv2d(n_classes, 64, 3, stride=2, padding=1),
@@ -100,7 +115,7 @@ class ConvVAE(nn.Module):
         self.fc_mu = nn.Linear(256 * 5 * 10, latent_dim)
         self.fc_logvar = nn.Linear(256 * 5 * 10, latent_dim)
 
-        self.fc_decode = nn.Linear(latent_dim + n_buckets, 256 * 5 * 10)
+        self.fc_decode = nn.Linear(latent_dim + self.n_cond_slots, 256 * 5 * 10)
         self.decoder = nn.Sequential(
             ResBlock(256),
             nn.ConvTranspose2d(256, 128, 3, stride=1, padding=1),
@@ -124,10 +139,11 @@ class ConvVAE(nn.Module):
         return mu + eps * std
 
     def decode(self, z, bucket):
-        """bucket: (B,) long or (B, n_buckets) float. Conditioning is
-        concatenated onto z before the decoder projection."""
+        """bucket: (B,) long in [0, n_cond_slots-1] or (B, n_cond_slots) float.
+        The highest index (self.n_buckets) is the unconditional/null slot used
+        for classifier-free guidance."""
         if bucket.dim() == 1:
-            cond = F.one_hot(bucket, num_classes=self.n_buckets).float()
+            cond = F.one_hot(bucket, num_classes=self.n_cond_slots).float()
         else:
             cond = bucket.float()
         zc = torch.cat([z, cond], dim=1)
@@ -137,17 +153,23 @@ class ConvVAE(nn.Module):
 
     def forward(self, x, bucket):
         mu, logvar = self.encode(x)
+        # Clamp logvar so exp(logvar) can't overflow during KL/sampling.
+        logvar = torch.clamp(logvar, min=-10.0, max=10.0)
         z = self.reparameterize(mu, logvar)
         recon = self.decode(z, bucket)
         return recon, mu, logvar
 
 
-def compute_class_weights(levels_3c):
+def compute_class_weights(levels_3c, max_weight=1.5):
     counts = np.bincount(levels_3c.flatten(), minlength=NUM_CLASSES).astype(np.float32)
     counts = np.maximum(counts, 1.0)
     freqs = counts / counts.sum()
     weights = 1.0 / np.sqrt(freqs)
     weights /= weights.mean()
+    # Cap the hazard-class weight so the model doesn't over-generate hazards
+    # in the easy bucket. With the default sqrt-inverse scheme hazard ≈ 2.25,
+    # which was bleeding hazards into bucket 0 at inference.
+    weights = np.minimum(weights, max_weight)
     return torch.tensor(weights)
 
 
@@ -157,11 +179,17 @@ def vae_loss(recon_logits, target, mu, logvar, class_weights, beta=0.1):
     return ce + beta * kl, ce, kl
 
 
-def train_vae(levels_8c, epochs=150, batch_size=32, lr=1e-3, beta=0.1, latent_dim=64):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def train_vae(levels_8c, epochs=150, batch_size=64, lr=1e-3, beta=0.1, latent_dim=64):
+    device = pick_device()
+    print(f"training on {device}")
 
-    # Bucket on the full set, then split — so buckets stay aligned with levels.
-    buckets, info = assign_buckets(levels_8c, n_buckets=N_BUCKETS)
+    # Bucket on the full set, then drop chunks with no reachable start so
+    # the VAE doesn't learn a noisy 'degenerate-chunk' mode in any bucket.
+    buckets, valid_mask, info = assign_buckets(levels_8c, n_buckets=N_BUCKETS)
+    levels_8c = levels_8c[valid_mask]
+    buckets = buckets[valid_mask]
+    print(f"kept {len(levels_8c)}/{info['n_valid'] + info['n_dropped']} chunks "
+          f"({info['n_dropped']} dropped: no reachable start)")
     levels_3c = to_three_class(levels_8c)
     # Bake the layout constraint into the training data so the VAE doesn't
     # spend capacity modeling the top-sky / bottom-floor bands that are
@@ -199,10 +227,17 @@ def train_vae(levels_8c, epochs=150, batch_size=32, lr=1e-3, beta=0.1, latent_di
         train_loss = 0
         for x, target, bucket in train_loader:
             x, target, bucket = x.to(device), target.to(device), bucket.to(device)
+            # Classifier-free guidance: randomly replace the real bucket with
+            # the null bucket so the decoder also learns an unconditional
+            # distribution. At inference we combine conditional + unconditional
+            # logits to sharpen the conditioning effect.
+            drop = torch.rand(bucket.size(0), device=device) < P_UNCOND
+            bucket = torch.where(drop, torch.full_like(bucket, NULL_BUCKET), bucket)
             recon, mu, logvar = model(x, bucket)
             loss, ce, kl = vae_loss(recon, target, mu, logvar, class_weights, beta)
             optimizer.zero_grad()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
             optimizer.step()
             train_loss += loss.item()
         train_loss /= len(train_loader)
@@ -229,13 +264,19 @@ def train_vae(levels_8c, epochs=150, batch_size=32, lr=1e-3, beta=0.1, latent_di
     return model, info
 
 
-def generate_levels(model, n=1, bucket=1, temperature=1.0, seed=None, device=None):
+def generate_levels(
+    model, n=1, bucket=1, temperature=1.0, seed=None, device=None,
+    guidance_scale=DEFAULT_GUIDANCE_SCALE,
+):
     """
     bucket: int in [0, n_buckets-1] (easy/med/hard) — required conditioning.
+    guidance_scale: classifier-free guidance strength. 0 = unconditional,
+        1 = pure conditional, >1 extrapolates away from unconditional
+        (sharper bucket signal, standard range 1.5–4.0).
     Returns 3-class arrays (values in {0, 1, 2}).
     """
     if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = pick_device()
     model.eval()
 
     if seed is not None:
@@ -244,7 +285,13 @@ def generate_levels(model, n=1, bucket=1, temperature=1.0, seed=None, device=Non
     with torch.no_grad():
         z = torch.randn(n, model.latent_dim).to(device)
         bucket_ids = torch.full((n,), int(bucket), dtype=torch.long, device=device)
-        logits = model.decode(z, bucket_ids)
+        logits_cond = model.decode(z, bucket_ids)
+        if guidance_scale == 1.0:
+            logits = logits_cond
+        else:
+            null_ids = torch.full((n,), NULL_BUCKET, dtype=torch.long, device=device)
+            logits_uncond = model.decode(z, null_ids)
+            logits = logits_uncond + guidance_scale * (logits_cond - logits_uncond)
         probs = F.softmax(logits / temperature, dim=1)
         b, c, h, w = probs.shape
         probs_flat = probs.permute(0, 2, 3, 1).reshape(-1, c)
@@ -264,7 +311,7 @@ if __name__ == "__main__":
     levels = load_levels()
     print(f"Training on {len(levels)} levels...")
 
-    model, info = train_vae(levels, epochs=150, batch_size=32, lr=1e-3, beta=0.1, latent_dim=64)
+    model, info = train_vae(levels, epochs=150, batch_size=64, lr=1e-3, beta=0.1, latent_dim=64)
 
     for b in range(N_BUCKETS):
         sample = generate_levels(model, n=1, bucket=b, seed=42)[0]

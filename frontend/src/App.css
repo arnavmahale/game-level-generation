@@ -155,42 +155,32 @@ body {
   color: var(--text-muted);
 }
 
-/* Difficulty slider */
-.difficulty-slider-container {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
+/* Difficulty buttons */
+.difficulty-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
 }
 
-.difficulty-slider {
-  -webkit-appearance: none;
-  width: 100%;
-  height: 6px;
-  border-radius: 3px;
-  background: linear-gradient(to right, var(--green), var(--orange), var(--red));
-  outline: none;
-}
-
-.difficulty-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: white;
-  cursor: pointer;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-}
-
-.difficulty-labels {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.7rem;
-  color: var(--text-muted);
-}
-
-.difficulty-value {
-  font-weight: 600;
+.difficulty-option {
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
   color: var(--text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.difficulty-option:hover {
+  background: var(--bg-hover);
+}
+
+.difficulty-option.selected {
+  border-color: var(--accent);
+  background: rgba(99, 102, 241, 0.08);
 }
 
 /* Seed input */
