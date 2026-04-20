@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { setToken } from '../utils/api';
 
 export default function AuthPage({ onAuth }) {
   const [mode, setMode] = useState('login');
@@ -20,6 +21,7 @@ export default function AuthPage({ onAuth }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Something went wrong');
+      if (data.token) setToken(data.token);
       onAuth(data.user);
     } catch (err) {
       setError(err.message);

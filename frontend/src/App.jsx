@@ -6,13 +6,13 @@ import MetricsPanel from './components/MetricsPanel';
 import TileLegend from './components/TileLegend';
 import AuthPage from './components/AuthPage';
 import UserPanel, { Leaderboard } from './components/UserPanel';
+import { apiFetch, clearToken } from './utils/api';
 import './App.css';
 
 async function fetchChunk({ model = 'vae', difficulty = 50, seed = null, repair = true } = {}) {
-  const res = await fetch('/api/generate', {
+  const res = await apiFetch('/api/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
     body: JSON.stringify({ model, difficulty, seed, repair }),
   });
   if (!res.ok) {
@@ -24,10 +24,9 @@ async function fetchChunk({ model = 'vae', difficulty = 50, seed = null, repair 
 
 async function postScore(path, body) {
   try {
-    const res = await fetch(path, {
+    const res = await apiFetch(path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
@@ -63,7 +62,7 @@ export default function App() {
 
   // Check session on mount.
   useEffect(() => {
-    fetch('/api/auth/me', { credentials: 'include' })
+    apiFetch('/api/auth/me')
       .then((r) => r.json())
       .then((d) => setUser(d.user))
       .catch(() => setUser(null))
@@ -73,7 +72,7 @@ export default function App() {
   // Refresh stats whenever user changes.
   useEffect(() => {
     if (!user) { setStats(null); return; }
-    fetch('/api/stats/me', { credentials: 'include' })
+    apiFetch('/api/stats/me')
       .then((r) => r.json())
       .then(setStats)
       .catch(() => {});
@@ -161,7 +160,8 @@ export default function App() {
   }, []);
 
   const handleLogout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+    await apiFetch('/api/auth/logout', { method: 'POST' });
+    clearToken();
     setUser(null);
     setLevel(null);
     setChunks(null);
