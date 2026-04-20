@@ -76,14 +76,18 @@ export default function AuthPage({ onAuth }) {
             {busy ? 'Please wait…' : mode === 'login' ? 'Log in' : 'Create account'}
           </button>
         </form>
-        <div className="auth-divider"><span>or</span></div>
-        <button
-          type="button"
-          className="auth-guest"
-          onClick={() => onAuth({ username: 'Guest', isGuest: true })}
-        >
-          Continue as guest
-        </button>
+        {mode === 'login' && (
+          <>
+            <div className="auth-divider"><span>or</span></div>
+            <button
+              type="button"
+              className="auth-guest"
+              onClick={() => onAuth({ username: 'Guest', isGuest: true })}
+            >
+              Continue as guest
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
