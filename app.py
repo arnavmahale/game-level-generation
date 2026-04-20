@@ -8,7 +8,6 @@ Conv-VAE — plus a BFS playability repair post-pass.
 
 import sys
 import os
-import re
 from datetime import timedelta
 from functools import wraps
 
@@ -122,9 +121,6 @@ app.config.update(
 CORS(app, supports_credentials=True)
 
 
-USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{3,20}$")
-
-
 def _require_auth(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
@@ -140,8 +136,8 @@ def auth_register():
     data = request.get_json() or {}
     username = (data.get("username") or "").strip()
     password = data.get("password") or ""
-    if not USERNAME_RE.match(username):
-        return jsonify({"error": "username must be 3-20 chars: letters, digits, underscore"}), 400
+    if not username:
+        return jsonify({"error": "username is required"}), 400
     if not password:
         return jsonify({"error": "password is required"}), 400
     if db_mod.get_user_by_username(username) is not None:

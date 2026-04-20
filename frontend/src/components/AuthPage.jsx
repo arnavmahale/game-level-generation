@@ -77,11 +77,6 @@ export default function AuthPage({ onAuth }) {
             {busy ? 'Please wait…' : mode === 'login' ? 'Log in' : 'Create account'}
           </button>
         </form>
-        {mode === 'register' && (
-          <p className="auth-hint">
-            Username: 3–20 characters, letters / digits / underscore.
-          </p>
-        )}
       </div>
     </div>
   );
