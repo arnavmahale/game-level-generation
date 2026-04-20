@@ -137,6 +137,10 @@ celerybeat.pid
 # Environments
 .env
 .envrc
+
+# Turso embedded replica
+genterrain.db
+genterrain.db-*
 .venv
 env/
 venv/
