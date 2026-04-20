@@ -121,17 +121,24 @@ app.config.update(
 CORS(app, supports_credentials=True)
 
 
+from werkzeug.exceptions import HTTPException
+import traceback
+
+
+@app.errorhandler(HTTPException)
+def _http_error(err):
+    return jsonify({"error": err.description}), err.code
+
+
 @app.errorhandler(Exception)
-def _json_errors(err):
-    # Flask's default 500 page is HTML; the SPA calls res.json() on responses
-    # and would blow up with a cryptic "string did not match the expected
-    # pattern" in Safari. Always speak JSON so the frontend can surface the
-    # real cause.
-    from werkzeug.exceptions import HTTPException
-    if isinstance(err, HTTPException):
-        return jsonify({"error": err.description}), err.code
-    app.logger.exception("Unhandled error")
-    return jsonify({"error": f"{type(err).__name__}: {err}"}), 500
+def _unhandled_error(err):
+    # Keep errors as JSON so the SPA's res.json() doesn't blow up with
+    # Safari's "string did not match the expected pattern" on the
+    # default HTML 500 page.
+    tb = traceback.format_exc()
+    app.logger.error("Unhandled error:\n%s", tb)
+    original = getattr(err, "original_exception", None) or err
+    return jsonify({"error": f"{type(original).__name__}: {original}"}), 500
 
 
 def _require_auth(fn):
