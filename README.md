@@ -9,6 +9,8 @@ Generative models that produce playable 2D platformer levels in the style of *Su
 
 ## Live demo
 
+## [Live Demo](https://huggingface.co/spaces/arnav161/genterrain)
+
 [huggingface.co/spaces/arnav161/genterrain](https://huggingface.co/spaces/arnav161/genterrain)
 
 ## Quick start (local)
