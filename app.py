@@ -8,6 +8,7 @@ Conv-VAE — plus a BFS playability repair post-pass.
 
 import sys
 import os
+import logging
 from datetime import timedelta
 from functools import wraps
 
@@ -15,6 +16,11 @@ import numpy as np
 import torch
 from flask import Flask, request, jsonify, send_from_directory, session
 from flask_cors import CORS
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 # Load .env before anything else so TURSO_* and FLASK_SECRET_KEY are available
 # when the db and Flask session modules initialize.
@@ -210,10 +216,15 @@ def auth_me():
 def score_completion(uid):
     data = request.get_json() or {}
     model = data.get("model")
+    app.logger.info("POST /api/scores/completion uid=%s model=%s", uid, model)
     if model not in ("naive", "bigram", "vae"):
         return jsonify({"error": "invalid model"}), 400
-    db_mod.record_completion(uid, model)
-    return jsonify(db_mod.stats_for_user(uid))
+    try:
+        db_mod.record_completion(uid, model)
+        return jsonify(db_mod.stats_for_user(uid))
+    except Exception as e:
+        app.logger.exception("score_completion failed")
+        return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
 
 
 @app.route("/api/scores/endless", methods=["POST"])
@@ -224,10 +235,15 @@ def score_endless(uid):
         score = int(data.get("score", 0))
     except (TypeError, ValueError):
         return jsonify({"error": "invalid score"}), 400
+    app.logger.info("POST /api/scores/endless uid=%s score=%s", uid, score)
     if score < 0 or score > 1_000_000:
         return jsonify({"error": "score out of range"}), 400
-    db_mod.record_endless_score(uid, score)
-    return jsonify(db_mod.stats_for_user(uid))
+    try:
+        db_mod.record_endless_score(uid, score)
+        return jsonify(db_mod.stats_for_user(uid))
+    except Exception as e:
+        app.logger.exception("score_endless failed")
+        return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
 
 
 @app.route("/api/stats/me", methods=["GET"])

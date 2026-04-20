@@ -36,7 +36,7 @@ export function Leaderboard({ onClose }) {
   useEffect(() => {
     fetch('/api/leaderboard/endless', { credentials: 'include' })
       .then((r) => r.json())
-      .then((b) => setEndless(b.rows || []))
+      .then((b) => setEndless((b.rows || []).slice(0, 10)))
       .catch((e) => setErr(e.message));
   }, []);
 

@@ -10,8 +10,11 @@ ephemeral), so we call conn.sync() once during init.
 
 import os
 import threading
+import logging
 import bcrypt
 import libsql_experimental as libsql
+
+log = logging.getLogger(__name__)
 
 
 _REPLICA_PATH = os.environ.get("TURSO_REPLICA_PATH", "genterrain.db")
@@ -90,8 +93,8 @@ def _exec(sql, params=()):
     conn = get_conn()
     try:
         conn.sync()
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("sync() pre-read failed: %s", e)
     return conn.execute(sql, params)
 
 
@@ -101,8 +104,8 @@ def _exec_commit(sql, params=()):
     conn.commit()
     try:
         conn.sync()
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("sync() post-write failed: %s", e)
     return cur
 
 
@@ -148,17 +151,21 @@ def get_user_by_id(user_id: int):
 
 
 def record_completion(user_id: int, model: str):
-    _exec_commit(
+    log.info("record_completion user_id=%s model=%s", user_id, model)
+    cur = _exec_commit(
         "INSERT INTO completions (user_id, model) VALUES (?, ?)",
         (user_id, model),
     )
+    log.info("record_completion inserted rowid=%s", getattr(cur, "lastrowid", None))
 
 
 def record_endless_score(user_id: int, score: int):
-    _exec_commit(
+    log.info("record_endless_score user_id=%s score=%s", user_id, score)
+    cur = _exec_commit(
         "INSERT INTO endless_scores (user_id, score) VALUES (?, ?)",
         (user_id, int(score)),
     )
+    log.info("record_endless_score inserted rowid=%s", getattr(cur, "lastrowid", None))
 
 
 def stats_for_user(user_id: int):
