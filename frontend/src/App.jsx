@@ -2,7 +2,6 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import ControlPanel from './components/ControlPanel';
 import LevelCanvas from './components/LevelCanvas';
 import GameCanvas from './components/GameCanvas';
-import MetricsPanel from './components/MetricsPanel';
 import TileLegend from './components/TileLegend';
 import AuthPage from './components/AuthPage';
 import UserPanel, { Leaderboard } from './components/UserPanel';
@@ -214,6 +213,11 @@ export default function App() {
                   >
                     Preview
                   </button>
+                  {metrics && (
+                    <span className={`playable-badge ${metrics.playable ? 'good' : 'warn'}`}>
+                      {metrics.playable ? 'Playable' : 'Not playable'}
+                    </span>
+                  )}
                 </div>
               )}
               {inInfiniteMode && (
@@ -241,7 +245,6 @@ export default function App() {
           ) : (
             <LevelCanvas level={level} />
           )}
-          <MetricsPanel metrics={metrics} paramsUsed={paramsUsed} />
         </section>
       </main>
 
