@@ -59,8 +59,6 @@ export default function AuthPage({ onAuth }) {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               autoComplete="username"
-              minLength={3}
-              maxLength={20}
               required
             />
           </label>
@@ -71,7 +69,6 @@ export default function AuthPage({ onAuth }) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-              minLength={6}
               required
             />
           </label>
@@ -82,7 +79,7 @@ export default function AuthPage({ onAuth }) {
         </form>
         {mode === 'register' && (
           <p className="auth-hint">
-            3–20 characters: letters, digits, or underscore. Password ≥ 6 characters.
+            Username: 3–20 characters, letters / digits / underscore.
           </p>
         )}
       </div>
