@@ -100,7 +100,7 @@ export default function ControlPanel({ onGenerate, isLoading }) {
                 checked={repair}
                 onChange={(e) => setRepair(e.target.checked)}
               />
-              <span>Apply BFS playability repair</span>
+              <span>Apply playability repair</span>
             </label>
           </div>
         </>

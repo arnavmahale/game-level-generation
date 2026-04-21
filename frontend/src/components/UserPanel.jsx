@@ -3,20 +3,24 @@ import { apiFetch } from '../utils/api';
 
 export default function UserPanel({ user, stats, onLogout }) {
   return (
-    <div className="user-panel">
-      <div className="user-row">
-        <span className="user-name">👤 {user.username}</span>
-        <button className="link-btn" onClick={onLogout}>Log out</button>
-      </div>
-      <div className="stats-block">
-        <div className="stat-line">
-          <span>Endless best</span>
-          <strong>{stats?.endless_best ?? 0}</strong>
+    <div className="user-menu" tabIndex={0}>
+      <button className="user-menu-trigger" aria-label="User menu">
+        <span className="user-menu-icon">👤</span>
+        <span className="user-menu-name">{user.username}</span>
+      </button>
+      <div className="user-menu-dropdown">
+        <div className="dropdown-header">Signed in as <strong>{user.username}</strong></div>
+        <div className="dropdown-stats">
+          <div className="stat-line">
+            <span>Endless best</span>
+            <strong>{stats?.endless_best ?? 0}</strong>
+          </div>
+          <div className="stat-line">
+            <span>Levels completed</span>
+            <strong>{stats?.completions?.vae ?? 0}</strong>
+          </div>
         </div>
-        <div className="stat-line">
-          <span>Levels completed</span>
-          <strong>{stats?.completions?.vae ?? 0}</strong>
-        </div>
+        <button className="dropdown-logout" onClick={onLogout}>Log out</button>
       </div>
     </div>
   );

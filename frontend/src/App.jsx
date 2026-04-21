@@ -2,8 +2,6 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import ControlPanel from './components/ControlPanel';
 import LevelCanvas from './components/LevelCanvas';
 import GameCanvas from './components/GameCanvas';
-import MetricsPanel from './components/MetricsPanel';
-import TileLegend from './components/TileLegend';
 import AuthPage from './components/AuthPage';
 import UserPanel, { Leaderboard } from './components/UserPanel';
 import { apiFetch, clearToken } from './utils/api';
@@ -182,18 +180,16 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>TerrainGen</h1>
+        <div className="app-header-title">
+          <h1>TerrainGen</h1>
+          <p className="app-tagline">AI-generated platformer levels.</p>
+        </div>
+        <UserPanel user={user} stats={stats} onLogout={handleLogout} />
       </header>
 
       <main className="app-main">
         <aside className="sidebar">
           <ControlPanel onGenerate={handleGenerate} isLoading={isLoading} />
-          <UserPanel
-            user={user}
-            stats={stats}
-            onLogout={handleLogout}
-          />
-          <TileLegend />
         </aside>
 
         <section className="content">
@@ -225,7 +221,7 @@ export default function App() {
               )}
             </div>
             <button className="leaderboard-btn" onClick={() => setShowLeaderboard(true)}>
-              🏆 Leaderboards
+              🏆 Leaderboard
             </button>
           </div>
           {inInfiniteMode ? (
@@ -237,11 +233,10 @@ export default function App() {
               onProgress={handleProgress}
             />
           ) : viewMode === 'play' ? (
-            <GameCanvas level={level} onWin={handleWin} />
+            <GameCanvas level={level} onWin={handleWin} playable={metrics?.playable} />
           ) : (
             <LevelCanvas level={level} />
           )}
-          <MetricsPanel metrics={metrics} paramsUsed={paramsUsed} />
         </section>
       </main>
 

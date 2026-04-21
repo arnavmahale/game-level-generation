@@ -3,17 +3,24 @@
 /* ------------------------------------------------------------------ */
 
 :root {
-  --bg: #0f1117;
-  --bg-card: #1a1d27;
-  --bg-hover: #242834;
-  --border: #2a2e3a;
-  --text: #e4e4e7;
+  --bg: #0b0d14;
+  --bg-card: #161925;
+  --bg-elev: #1d2130;
+  --bg-hover: #242a3b;
+  --border: #272c3c;
+  --border-strong: #353b52;
+  --text: #ececf1;
   --text-muted: #8b8fa3;
-  --accent: #6366f1;
-  --accent-hover: #818cf8;
+  --accent: #7c83ff;
+  --accent-hover: #9ea3ff;
+  --accent-soft: rgba(124, 131, 255, 0.14);
+  --accent-soft-strong: rgba(124, 131, 255, 0.22);
   --green: #22c55e;
   --red: #ef4444;
   --orange: #f59e0b;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.4);
 }
 
 * {
@@ -42,7 +49,10 @@ body {
 .app-header {
   padding: 1.5rem 2rem;
   border-bottom: 1px solid var(--border);
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
 }
 
 .app-header h1 {
@@ -51,7 +61,18 @@ body {
   letter-spacing: -0.02em;
 }
 
-.app-header p {
+.app-header .user-menu {
+  position: absolute;
+  right: 1.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.app-header-title {
+  text-align: center;
+}
+
+.app-tagline {
   color: var(--text-muted);
   font-size: 0.9rem;
   margin-top: 0.25rem;
@@ -66,8 +87,9 @@ body {
 .sidebar {
   width: 320px;
   min-width: 320px;
-  padding: 1.5rem;
+  padding: 1.75rem 1.5rem;
   border-right: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--bg) 0%, #0d1019 100%);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -132,7 +154,8 @@ body {
 
 .model-option.selected {
   border-color: var(--accent);
-  background: rgba(99, 102, 241, 0.08);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent) inset;
 }
 
 .model-option input[type='radio'] {
@@ -180,7 +203,9 @@ body {
 
 .difficulty-option.selected {
   border-color: var(--accent);
-  background: rgba(99, 102, 241, 0.08);
+  background: var(--accent-soft-strong);
+  color: white;
+  box-shadow: 0 0 0 1px var(--accent) inset;
 }
 
 /* Seed input */
@@ -223,24 +248,33 @@ body {
 /* Generate button */
 .generate-btn {
   width: 100%;
-  padding: 0.75rem;
-  background: var(--accent);
+  padding: 0.85rem;
+  background: linear-gradient(135deg, var(--accent) 0%, #a78bfa 100%);
   color: white;
   border: none;
-  border-radius: 8px;
+  border-radius: 10px;
   font-size: 0.95rem;
   font-weight: 600;
+  letter-spacing: 0.01em;
   cursor: pointer;
-  transition: background 0.15s;
+  box-shadow: 0 4px 14px rgba(124, 131, 255, 0.3);
+  transition: transform 0.15s, box-shadow 0.15s, filter 0.15s;
 }
 
 .generate-btn:hover:not(:disabled) {
-  background: var(--accent-hover);
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+  box-shadow: 0 6px 20px rgba(124, 131, 255, 0.4);
+}
+
+.generate-btn:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .generate-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .loading-spinner {
@@ -286,18 +320,21 @@ body {
   background: var(--bg-card);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  padding: 0.5rem 1.1rem;
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s;
   white-space: nowrap;
+  box-shadow: var(--shadow-sm);
 }
 
 .leaderboard-btn:hover {
   background: var(--bg-hover);
   border-color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
 }
 
 .endless-score {
@@ -364,6 +401,29 @@ body {
   color: white;
 }
 
+.playable-badge {
+  margin-left: 0.75rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+  align-self: center;
+}
+
+.playable-badge.good {
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+.playable-badge.warn {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
 /* ------------------------------------------------------------------ */
 /* Game canvas                                                         */
 /* ------------------------------------------------------------------ */
@@ -371,12 +431,13 @@ body {
 .game-container {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 1.25rem;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.9rem;
   align-items: center;
+  box-shadow: var(--shadow-md);
 }
 
 .game-canvas {
@@ -394,11 +455,22 @@ body {
 }
 
 .game-controls-hint {
+  width: 100%;
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 1rem;
   font-size: 0.8rem;
   color: var(--text-muted);
+}
+
+.game-controls-hint .playable-badge {
+  margin-left: 0;
+  margin-right: 0.25rem;
+}
+
+.game-controls-hint .playable-badge-left {
+  margin-right: auto;
 }
 
 .game-controls-hint kbd {
@@ -613,6 +685,7 @@ body {
   font-weight: 700;
   letter-spacing: -0.02em;
   text-align: center;
+  margin-bottom: 3rem;
 }
 
 .auth-tagline {
@@ -720,57 +793,77 @@ body {
 }
 
 /* ------------------------------------------------------------------ */
-/* User panel                                                          */
+/* User menu (header icon + hover dropdown)                            */
 /* ------------------------------------------------------------------ */
 
-.user-panel {
+.user-menu {
+  position: relative;
+  outline: none;
+}
+
+.user-menu-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 999px;
+  padding: 0.4rem 0.85rem 0.4rem 0.55rem;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.user-menu-trigger:hover {
+  border-color: var(--accent);
+}
+
+.user-menu-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.user-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  min-width: 240px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
   padding: 0.85rem 1rem;
-  margin-bottom: 1rem;
-  display: flex;
+  display: none;
   flex-direction: column;
   gap: 0.6rem;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+  z-index: 50;
 }
 
-.user-row {
+.user-menu:hover .user-menu-dropdown,
+.user-menu:focus-within .user-menu-dropdown {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
 }
 
-.user-name {
-  font-weight: 600;
-  font-size: 0.95rem;
-}
-
-.link-btn {
-  background: transparent;
-  color: var(--accent-hover);
-  border: none;
-  cursor: pointer;
+.dropdown-header {
   font-size: 0.85rem;
-  font-family: inherit;
-  padding: 0;
+  color: var(--text-muted);
 }
 
-.link-btn:hover {
-  text-decoration: underline;
+.dropdown-header strong {
+  color: var(--text);
 }
 
-.link-btn.full {
-  text-align: left;
-  padding: 0.25rem 0;
-}
-
-.stats-block {
+.dropdown-stats {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
   font-size: 0.85rem;
   border-top: 1px solid var(--border);
-  padding-top: 0.55rem;
+  border-bottom: 1px solid var(--border);
+  padding: 0.55rem 0;
 }
 
 .stat-line {
@@ -785,6 +878,38 @@ body {
 .stat-line strong {
   color: var(--text);
   font-variant-numeric: tabular-nums;
+}
+
+.dropdown-logout {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.dropdown-logout:hover {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #ef4444;
+}
+
+.link-btn {
+  background: transparent;
+  color: var(--accent-hover);
+  border: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-family: inherit;
+  padding: 0;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
 }
 
 /* ------------------------------------------------------------------ */
