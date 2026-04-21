@@ -93,27 +93,61 @@ def get_conn():
     return conn
 
 
+def _is_stale_stream_error(exc: Exception) -> bool:
+    # Turso/Hrana closes idle streams server-side; our cached per-thread
+    # conn then 404s on the next execute. Detect this so we can drop the
+    # conn and retry once with a fresh one.
+    msg = str(exc)
+    return "stream not found" in msg or "status=404" in msg
+
+
+def _reset_conn():
+    conn = getattr(_tls, "conn", None)
+    if conn is not None:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    _tls.conn = None
+
+
 def _exec(sql, params=()):
     # Pull any remote changes so this thread's replica sees writes made by
     # other request threads (e.g. a leaderboard read after someone else
     # scored). Turso sync is fast (~100ms) and the app is low-QPS.
-    conn = get_conn()
-    try:
-        conn.sync()
-    except Exception as e:
-        log.warning("sync() pre-read failed: %s", e)
-    return conn.execute(sql, params)
+    for attempt in (0, 1):
+        conn = get_conn()
+        try:
+            try:
+                conn.sync()
+            except Exception as e:
+                log.warning("sync() pre-read failed: %s", e)
+            return conn.execute(sql, params)
+        except Exception as e:
+            if attempt == 0 and _is_stale_stream_error(e):
+                log.warning("stale Hrana stream on read; reconnecting")
+                _reset_conn()
+                continue
+            raise
 
 
 def _exec_commit(sql, params=()):
-    conn = get_conn()
-    cur = conn.execute(sql, params)
-    conn.commit()
-    try:
-        conn.sync()
-    except Exception as e:
-        log.warning("sync() post-write failed: %s", e)
-    return cur
+    for attempt in (0, 1):
+        conn = get_conn()
+        try:
+            cur = conn.execute(sql, params)
+            conn.commit()
+            try:
+                conn.sync()
+            except Exception as e:
+                log.warning("sync() post-write failed: %s", e)
+            return cur
+        except Exception as e:
+            if attempt == 0 and _is_stale_stream_error(e):
+                log.warning("stale Hrana stream on write; reconnecting")
+                _reset_conn()
+                continue
+            raise
 
 
 def hash_password(pw: str) -> str:
