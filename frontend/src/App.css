@@ -786,6 +786,17 @@ body {
   gap: 0.3rem;
 }
 
+.stat-group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.stat-group-header strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
 .stat-group-label {
   color: var(--text-muted);
 }
