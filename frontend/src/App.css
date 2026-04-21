@@ -3,24 +3,25 @@
 /* ------------------------------------------------------------------ */
 
 :root {
-  --bg: #0b0d14;
-  --bg-card: #161925;
-  --bg-elev: #1d2130;
-  --bg-hover: #242a3b;
-  --border: #272c3c;
-  --border-strong: #353b52;
-  --text: #ececf1;
-  --text-muted: #8b8fa3;
-  --accent: #7c83ff;
-  --accent-hover: #9ea3ff;
-  --accent-soft: rgba(124, 131, 255, 0.14);
-  --accent-soft-strong: rgba(124, 131, 255, 0.22);
+  --bg: #0c0e14;
+  --bg-card: #151823;
+  --bg-elev: #1c2030;
+  --bg-hover: #1f2433;
+  --border: #252a38;
+  --border-strong: #2f3546;
+  --text: #e4e6ec;
+  --text-muted: #8a8fa3;
+  --accent: #6b72d8;
+  --accent-hover: #7e85e0;
+  --accent-soft: rgba(107, 114, 216, 0.18);
+  --accent-soft-strong: rgba(107, 114, 216, 0.26);
+  --accent-border: rgba(107, 114, 216, 0.55);
   --green: #22c55e;
   --red: #ef4444;
   --orange: #f59e0b;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.32);
 }
 
 * {
@@ -89,7 +90,6 @@ body {
   min-width: 320px;
   padding: 1.75rem 1.5rem;
   border-right: 1px solid var(--border);
-  background: linear-gradient(180deg, var(--bg) 0%, #0d1019 100%);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -153,9 +153,8 @@ body {
 }
 
 .model-option.selected {
-  border-color: var(--accent);
+  border-color: var(--accent-border);
   background: var(--accent-soft);
-  box-shadow: 0 0 0 1px var(--accent) inset;
 }
 
 .model-option input[type='radio'] {
@@ -202,10 +201,9 @@ body {
 }
 
 .difficulty-option.selected {
-  border-color: var(--accent);
-  background: var(--accent-soft-strong);
-  color: white;
-  box-shadow: 0 0 0 1px var(--accent) inset;
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--text);
 }
 
 /* Seed input */
@@ -248,33 +246,24 @@ body {
 /* Generate button */
 .generate-btn {
   width: 100%;
-  padding: 0.85rem;
-  background: linear-gradient(135deg, var(--accent) 0%, #a78bfa 100%);
+  padding: 0.75rem;
+  background: var(--accent);
   color: white;
   border: none;
-  border-radius: 10px;
-  font-size: 0.95rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
   font-weight: 600;
-  letter-spacing: 0.01em;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(124, 131, 255, 0.3);
-  transition: transform 0.15s, box-shadow 0.15s, filter 0.15s;
+  transition: background 0.15s;
 }
 
 .generate-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  filter: brightness(1.08);
-  box-shadow: 0 6px 20px rgba(124, 131, 255, 0.4);
-}
-
-.generate-btn:active:not(:disabled) {
-  transform: translateY(0);
+  background: var(--accent-hover);
 }
 
 .generate-btn:disabled {
-  opacity: 0.6;
+  opacity: 0.55;
   cursor: not-allowed;
-  box-shadow: none;
 }
 
 .loading-spinner {
@@ -325,16 +314,13 @@ body {
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s, border-color 0.15s;
   white-space: nowrap;
-  box-shadow: var(--shadow-sm);
 }
 
 .leaderboard-btn:hover {
   background: var(--bg-hover);
-  border-color: var(--accent);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
+  border-color: var(--border-strong);
 }
 
 .endless-score {
@@ -397,8 +383,9 @@ body {
 }
 
 .view-tab.active {
-  background: var(--accent);
-  color: white;
+  background: var(--accent-soft);
+  color: var(--text);
+  border-color: var(--accent-border);
 }
 
 .playable-badge {
@@ -413,15 +400,15 @@ body {
 }
 
 .playable-badge.good {
-  background: rgba(34, 197, 94, 0.12);
-  color: #22c55e;
-  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(34, 197, 94, 0.08);
+  color: #4ade80;
+  border-color: rgba(34, 197, 94, 0.2);
 }
 
 .playable-badge.warn {
-  background: rgba(239, 68, 68, 0.12);
-  color: #ef4444;
-  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.08);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.2);
 }
 
 /* ------------------------------------------------------------------ */
@@ -435,9 +422,14 @@ body {
   padding: 1.25rem;
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
   align-items: center;
-  box-shadow: var(--shadow-md);
+}
+
+.game-stack {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  max-width: 100%;
 }
 
 .game-canvas {
