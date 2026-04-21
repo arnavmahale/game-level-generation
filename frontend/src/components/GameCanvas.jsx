@@ -13,12 +13,13 @@ const MAX_FALL_SPEED = 12;
 // columns of the end of the buffered world.
 const CHUNK_FETCH_LOOKAHEAD_COLS = GRID_WIDTH;
 
-export default function GameCanvas({ level, chunks, onChunkNeeded, onRestart, onWin, onDeath }) {
+export default function GameCanvas({ level, chunks, onChunkNeeded, onRestart, onWin, onDeath, onProgress }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const gameStateRef = useRef(null);
   const keysRef = useRef({});
   const animFrameRef = useRef(null);
+  const maxDistColRef = useRef(0);
   const imagesRef = useRef({ loaded: false });
   const [gameStatus, setGameStatus] = useState('waiting');
   const [tileSize, setTileSize] = useState(32);
@@ -91,6 +92,8 @@ export default function GameCanvas({ level, chunks, onChunkNeeded, onRestart, on
       spawnX: spawnCol * tileSize + tileSize * 0.1,
       spawnY: spawnRow * tileSize,
     };
+    maxDistColRef.current = 0;
+    if (onProgress) onProgress(0);
     setGameStatus('playing');
     // Only reset when the underlying world identity changes, not on every
     // chunk append — otherwise infinite mode would reset on each new chunk.
@@ -263,7 +266,8 @@ export default function GameCanvas({ level, chunks, onChunkNeeded, onRestart, on
         player.vx = 0;
         player.vy = 0;
         setGameStatus('dead');
-        if (onDeath) onDeath();
+        const distanceCols = Math.max(0, Math.floor(player.x / ts));
+        if (onDeath) onDeath(distanceCols);
         if (isInfinite && onRestart) {
           // Replaces the buffered chunks; spawn effect re-runs once the new
           // first chunk arrives and flips status back to 'playing'.
@@ -282,11 +286,18 @@ export default function GameCanvas({ level, chunks, onChunkNeeded, onRestart, on
       }
 
       // Infinite mode: trigger a fetch when entering the final chunk's last viewport.
-      if (isInfinite && onChunkNeeded) {
-        const playerCol = Math.floor(player.x / ts);
-        const needFetchAt = worldCols - CHUNK_FETCH_LOOKAHEAD_COLS;
-        if (playerCol >= needFetchAt) {
-          onChunkNeeded();
+      // Also track max distance reached for the live score HUD.
+      if (isInfinite) {
+        const playerCol = Math.max(0, Math.floor(player.x / ts));
+        if (playerCol > maxDistColRef.current) {
+          maxDistColRef.current = playerCol;
+          if (onProgress) onProgress(playerCol);
+        }
+        if (onChunkNeeded) {
+          const needFetchAt = worldCols - CHUNK_FETCH_LOOKAHEAD_COLS;
+          if (playerCol >= needFetchAt) {
+            onChunkNeeded();
+          }
         }
       }
 
@@ -402,7 +413,7 @@ export default function GameCanvas({ level, chunks, onChunkNeeded, onRestart, on
     return () => {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     };
-  }, [chunkList, gameStatus, tileSize, isSolid, isHazard, tileAt, worldCols, isInfinite, onChunkNeeded, onRestart, onWin, onDeath]);
+  }, [chunkList, gameStatus, tileSize, isSolid, isHazard, tileAt, worldCols, isInfinite, onChunkNeeded, onRestart, onWin, onDeath, onProgress]);
 
   if (!chunkList || chunkList.length === 0) {
     return (

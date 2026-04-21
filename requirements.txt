@@ -5,3 +5,6 @@ numpy==1.26.4
 scikit-learn==1.8.0
 matplotlib==3.10.8
 torch==2.2.2
+libsql-experimental==0.0.55
+bcrypt==5.0.0
+python-dotenv==1.2.2
