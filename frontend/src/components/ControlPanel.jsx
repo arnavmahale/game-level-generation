@@ -20,13 +20,13 @@ const MODELS = [
 // value so the UI reads correctly. Endless mode still hard-codes 50.
 const DIFFICULTY_LEVELS = [
   { id: 'easy', label: 'Easy', value: 50 },
-  { id: 'medium', label: 'Medium', value: 100 },
-  { id: 'hard', label: 'Hard', value: 0 },
+  { id: 'medium', label: 'Medium', value: 0 },
+  { id: 'hard', label: 'Hard', value: 100 },
 ];
 
 export default function ControlPanel({ onGenerate, isLoading }) {
   const [model, setModel] = useState('vae');
-  const [difficulty, setDifficulty] = useState(100);
+  const [difficulty, setDifficulty] = useState(0);
   const [seed, setSeed] = useState('');
   const [repair, setRepair] = useState(true);
 
