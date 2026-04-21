@@ -1,0 +1,140 @@
+{
+  "config": {
+    "n_per_cell": 200,
+    "seed": 42
+  },
+  "cells": {
+    "real@test": {
+      "no_repair": {
+        "n": 1521,
+        "playability": 0.23011176857330704,
+        "playable_count": 350,
+        "js_divergence": 0.011141353135310084,
+        "ground_coverage": 0.37374999999999997,
+        "ground_contiguity": 0.9932917452143051,
+        "hazard_density": 0.017218934911242604,
+        "diversity": 0.3475209595959597
+      },
+      "with_repair": {
+        "n": 1521,
+        "playability": 0.23011176857330704,
+        "playable_count": 350,
+        "js_divergence": 0.011141353135310084,
+        "ground_coverage": 0.37374999999999997,
+        "ground_contiguity": 0.9932917452143051,
+        "hazard_density": 0.017218934911242604,
+        "diversity": 0.3475209595959597
+      }
+    },
+    "naive@50": {
+      "no_repair": {
+        "n": 200,
+        "playability": 0.0,
+        "playable_count": 0,
+        "js_divergence": 0.02248343951124169,
+        "ground_coverage": 0.4697875,
+        "ground_contiguity": 1.0,
+        "hazard_density": 0.0,
+        "diversity": 0.30424368686868797
+      },
+      "with_repair": {
+        "n": 200,
+        "playability": 0.56,
+        "playable_count": 112,
+        "js_divergence": 0.019289640442687953,
+        "ground_coverage": 0.4294562500000001,
+        "ground_contiguity": 1.0,
+        "hazard_density": 0.0,
+        "diversity": 0.27958661616161534
+      }
+    },
+    "bigram@50": {
+      "no_repair": {
+        "n": 200,
+        "playability": 0.0,
+        "playable_count": 0,
+        "js_divergence": 0.011210447279438897,
+        "ground_coverage": 0.371275,
+        "ground_contiguity": 0.9548831437126841,
+        "hazard_density": 0.0147,
+        "diversity": 0.2938565656565659
+      },
+      "with_repair": {
+        "n": 200,
+        "playability": 0.845,
+        "playable_count": 169,
+        "js_divergence": 0.011322105842669038,
+        "ground_coverage": 0.35207499999999997,
+        "ground_contiguity": 0.9675827441507231,
+        "hazard_density": 0.013987500000000002,
+        "diversity": 0.2630876262626255
+      }
+    },
+    "vae@easy": {
+      "no_repair": {
+        "n": 200,
+        "playability": 0.0,
+        "playable_count": 0,
+        "js_divergence": 0.019125310063000396,
+        "ground_coverage": 0.39510625,
+        "ground_contiguity": 0.9138451685185445,
+        "hazard_density": 0.06383124999999999,
+        "diversity": 0.3114040404040403
+      },
+      "with_repair": {
+        "n": 200,
+        "playability": 0.315,
+        "playable_count": 63,
+        "js_divergence": 0.017126267464107114,
+        "ground_coverage": 0.36126874999999997,
+        "ground_contiguity": 0.9502027771440997,
+        "hazard_density": 0.060387500000000004,
+        "diversity": 0.28014217171717215
+      }
+    },
+    "vae@medium": {
+      "no_repair": {
+        "n": 200,
+        "playability": 0.005,
+        "playable_count": 1,
+        "js_divergence": 0.011884826935661095,
+        "ground_coverage": 0.4006375,
+        "ground_contiguity": 0.930457174000183,
+        "hazard_density": 0.01440625,
+        "diversity": 0.25838535353535336
+      },
+      "with_repair": {
+        "n": 200,
+        "playability": 0.785,
+        "playable_count": 157,
+        "js_divergence": 0.01144529126448299,
+        "ground_coverage": 0.38318125,
+        "ground_contiguity": 0.9603223942605229,
+        "hazard_density": 0.01355625,
+        "diversity": 0.21799671717171737
+      }
+    },
+    "vae@hard": {
+      "no_repair": {
+        "n": 200,
+        "playability": 0.0,
+        "playable_count": 0,
+        "js_divergence": 0.017197607366021526,
+        "ground_coverage": 0.35080000000000006,
+        "ground_contiguity": 0.887643885735344,
+        "hazard_density": 0.06116249999999999,
+        "diversity": 0.336276515151515
+      },
+      "with_repair": {
+        "n": 200,
+        "playability": 0.155,
+        "playable_count": 31,
+        "js_divergence": 0.01681646866861603,
+        "ground_coverage": 0.31885625,
+        "ground_contiguity": 0.9316126947683671,
+        "hazard_density": 0.05700625000000001,
+        "diversity": 0.304627777777778
+      }
+    }
+  }
+}
