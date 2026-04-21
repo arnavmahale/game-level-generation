@@ -1,0 +1,37 @@
+[
+  {
+    "case": 1,
+    "cell": "naive@50",
+    "seed": 4,
+    "bfs_reach_col": 34,
+    "diagnosis": "Naive baseline places a solid column at every x with Gaussian-perturbed height. When two adjacent columns differ by >2 tiles the step-up exceeds jump reach; repair's bridge-placement can't insert a platform inside a solid column."
+  },
+  {
+    "case": 2,
+    "cell": "bigram@50",
+    "seed": 7,
+    "bfs_reach_col": 19,
+    "diagnosis": "The bigram's weighted average sometimes produces a 3-wide hazard band that sits exactly on the ground row. Hazard density is low globally but locally lethal; repair's hazard-clearing pass is bounded to single tiles, so a contiguous wall of HAZARD halts BFS."
+  },
+  {
+    "case": 3,
+    "cell": "vae@easy",
+    "seed": 0,
+    "bfs_reach_col": -1,
+    "diagnosis": "In the easy bucket the VAE over-commits to flat ground and emits a solid ceiling directly above the walkable lane. Jump arc-check rejects all up-moves because the take-off column is blocked. Repair carves walls sideways, not ceilings overhead."
+  },
+  {
+    "case": 4,
+    "cell": "vae@medium",
+    "seed": 3,
+    "bfs_reach_col": 34,
+    "diagnosis": "The VAE emits a mid-level hazard 'moat' spanning 4+ columns. Repair bridges *above* the moat but the bridge height (row y) leaves a sub-arc hazard; the BFS arc-check then rejects the over-crossing. Repair doesn't iterate on its own bridge heights."
+  },
+  {
+    "case": 5,
+    "cell": "vae@hard",
+    "seed": 1,
+    "bfs_reach_col": 11,
+    "diagnosis": "Hazard density in the hard bucket is ~0.06 vs ~0.02 real, so hazards appear everywhere. Repair treats hazards as obstacles to route around; when >10% of the walkable band is hazardous, no routing works. The fix is lower hazard prior at sampling, not more repair."
+  }
+]

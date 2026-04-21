@@ -1,0 +1,10 @@
+# LaTeX intermediate files (we keep report.pdf in git for reviewers).
+*.aux
+*.log
+*.out
+*.toc
+*.bbl
+*.blg
+*.synctex.gz
+*.fls
+*.fdb_latexmk
