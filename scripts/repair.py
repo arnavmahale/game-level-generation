@@ -32,6 +32,7 @@ WALKABLE = (SOLID, SLOPE, PLATFORM)
 
 MAX_JUMP_HEIGHT = 2
 MAX_JUMP_WIDTH = 2
+GAME_JUMP_PEAK = 4  # match evaluate.GAME_JUMP_PEAK (real game peaks ~4 tiles up)
 
 
 # ---------------------------------------------------------------------------
@@ -50,6 +51,44 @@ def _is_standing(level, r, c):
     if int(level[r, c]) == HAZARD:
         return False
     return _is_walkable_below(level, r, c)
+
+
+def _jump_arc_clear(level, r, c, nr, nc):
+    """See evaluate.jump_arc_clear — mirror of that logic."""
+    r_peak = min(r - GAME_JUMP_PEAK, min(r, nr) - 1)
+    r_max = max(r, nr)
+    c_lo, c_hi = min(c, nc), max(c, nc)
+    for rr in range(r_peak, r_max + 1):
+        if rr < 0 or rr >= GRID_HEIGHT:
+            continue
+        for cc in range(c_lo, c_hi + 1):
+            if (rr, cc) == (r, c) or (rr, cc) == (nr, nc):
+                continue
+            if int(level[rr, cc]) == HAZARD:
+                return False
+    if nr < r:
+        for rr in range(nr, r):
+            if (rr, c) == (r, c) or (rr, c) == (nr, nc):
+                continue
+            if rr < 0 or rr >= GRID_HEIGHT:
+                continue
+            if int(level[rr, c]) in WALKABLE:
+                return False
+    for rr in (nr - 1, nr - 2):
+        if rr < 0 or rr >= GRID_HEIGHT:
+            continue
+        if (rr, nc) == (r, c) or (rr, nc) == (nr, nc):
+            continue
+        if int(level[rr, nc]) in WALKABLE:
+            return False
+    return True
+
+
+def _fall_path_clear(level, r, c, nr, nc):
+    for rr in range(r + 1, nr):
+        if 0 <= rr < GRID_HEIGHT and int(level[rr, nc]) == HAZARD:
+            return False
+    return True
 
 
 def _reachable_positions(level):
@@ -72,7 +111,9 @@ def _reachable_positions(level):
             for dc in range(-MAX_JUMP_WIDTH, MAX_JUMP_WIDTH + 1):
                 nr, nc = r - dh, c + dc
                 if 0 <= nr < GRID_HEIGHT and 0 <= nc < GRID_WIDTH:
-                    if _is_standing(level, nr, nc) and (nr, nc) not in visited:
+                    if (_is_standing(level, nr, nc)
+                        and _jump_arc_clear(level, r, c, nr, nc)
+                        and (nr, nc) not in visited):
                         visited.add((nr, nc))
                         q.append((nr, nc))
 
@@ -88,8 +129,9 @@ def _reachable_positions(level):
                 if int(level[nr, nc]) in WALKABLE:
                     break
                 if _is_standing(level, nr, nc) and (nr, nc) not in visited:
-                    visited.add((nr, nc))
-                    q.append((nr, nc))
+                    if _fall_path_clear(level, r, c, nr, nc):
+                        visited.add((nr, nc))
+                        q.append((nr, nc))
                     break
 
     return visited
@@ -241,26 +283,32 @@ def _place_bridge_step(level, reachable):
     frontier = [(r, c) for (r, c) in reachable if c == max_c]
     r, c = max(frontier)  # lowest row at the rightmost column
 
-    # Standing height above platform is (nr - 1); player must jump ≤ MAX_JUMP_HEIGHT
-    # from current row r, so the standing row must satisfy r - MAX_JUMP_HEIGHT <=
-    # (nr - 1), i.e. nr >= r - MAX_JUMP_HEIGHT + 1 = r - 3. We also allow placing
-    # below (nr = r+1, standing at r — level walk).
+    # Player stands on cell (nr - 1) above the platform at (nr, nc). That
+    # standing row must satisfy standing_row >= r - MAX_JUMP_HEIGHT, i.e.
+    # nr - 1 >= r - MAX_JUMP_HEIGHT, so nr >= r - MAX_JUMP_HEIGHT + 1.
+    # Allowed dr range: down to 1 (walking onto a platform at r+1, standing
+    # at r) up to -(MAX_JUMP_HEIGHT - 1) (standing 2 above current at most).
     for dc in range(1, MAX_JUMP_WIDTH + 1):
         nc = c + dc
         if nc >= GRID_WIDTH:
             break
-        for dr in [0, 1, -1, -2, -3]:
+        for dr in range(1, -MAX_JUMP_HEIGHT, -1):
             nr = r + dr
             if not (0 <= nr < GRID_HEIGHT):
                 continue
             if int(level[nr, nc]) != EMPTY:
                 continue
-            # The cell the player stands on (nr - 1) must be empty/passable
-            # (not solid, not hazard — hazard kills the player mid-jump).
+            # Cell the player will stand in (nr - 1) must be passable — not
+            # solid, not hazard (hazard kills on landing).
             if nr > 0:
                 above = int(level[nr - 1, nc])
                 if above in WALKABLE or above == HAZARD:
                     continue
+            # Confirm the jump arc from the current stance (r, c) to the new
+            # standing position (nr - 1, nc) isn't blocked by a ceiling or
+            # a hazard mid-flight.
+            if not _jump_arc_clear(level, r, c, nr - 1, nc):
+                continue
             level[nr, nc] = PLATFORM
             return level, True
     return level, False
