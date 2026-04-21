@@ -118,7 +118,7 @@ def _strip_sky_walls(level, top_rows=4):
     return level
 
 
-def enforce_layout(level, top_air_rows=4, bottom_solid_rows=2):
+def enforce_layout(level, top_air_rows=4, bottom_solid_rows=5):
     """
     Force top N rows to empty sky and bottom M rows to solid floor.
 
