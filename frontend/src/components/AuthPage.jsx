@@ -33,7 +33,7 @@ export default function AuthPage({ onAuth }) {
   return (
     <div className="auth-page">
       <div className="auth-card">
-        <h1>GenTerrain</h1>
+        <h1>TerrainGen</h1>
         <p className="auth-tagline">
           AI-generated platformer levels. Log in to track your runs.
         </p>
