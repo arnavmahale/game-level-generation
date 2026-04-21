@@ -7,17 +7,25 @@ import UserPanel, { Leaderboard } from './components/UserPanel';
 import { apiFetch, clearToken } from './utils/api';
 import './App.css';
 
-async function fetchChunk({ model = 'vae', difficulty = 50, seed = null, repair = true } = {}) {
+async function fetchChunk({ model = 'vae', difficulty = 50, seed = null, repair = true, leftContext = null } = {}) {
+  const body = { model, difficulty, seed, repair };
+  if (leftContext) body.left_context = leftContext;
   const res = await apiFetch('/api/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, difficulty, seed, repair }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const err = await res.json();
     throw new Error(err.error || 'Generation failed');
   }
   return res.json();
+}
+
+// Extract the rightmost column of a 2D level grid (for endless-mode seam
+// stitching — the backend copies this into col 0 of the next chunk).
+function rightmostCol(level) {
+  return level.map((row) => row[row.length - 1]);
 }
 
 async function postScore(path, body) {
@@ -56,6 +64,9 @@ export default function App() {
   const winRecordedRef = useRef(false);
   const lastFiniteParamsRef = useRef(null);
   const regenTimerRef = useRef(null);
+  // Rightmost column of the most recently added endless chunk; passed to
+  // the backend as left_context on the next fetch so seams don't desync.
+  const endlessSeamRef = useRef(null);
 
   // Check session on mount.
   useEffect(() => {
@@ -94,6 +105,7 @@ export default function App() {
       if (model === 'infinite') {
         const data = await fetchChunk({ model: 'vae', difficulty: 50, seed: null, repair: true });
         setChunks([data.level]);
+        endlessSeamRef.current = rightmostCol(data.level);
         setLevel(null);
         setMetrics(data.metrics);
         setCurrentModel('infinite');
@@ -121,8 +133,12 @@ export default function App() {
     if (pendingFetchRef.current) return;
     pendingFetchRef.current = true;
     try {
-      const data = await fetchChunk({ model: 'vae', difficulty: 50, seed: null, repair: true });
+      const data = await fetchChunk({
+        model: 'vae', difficulty: 50, seed: null, repair: true,
+        leftContext: endlessSeamRef.current,
+      });
       setChunks((prev) => (prev ? [...prev, data.level] : [data.level]));
+      endlessSeamRef.current = rightmostCol(data.level);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -134,8 +150,11 @@ export default function App() {
     if (pendingFetchRef.current) return;
     pendingFetchRef.current = true;
     try {
+      // Restart = brand-new world, no seam continuity from the previous run.
+      endlessSeamRef.current = null;
       const data = await fetchChunk({ model: 'vae', difficulty: 50, seed: null, repair: true });
       setChunks([data.level]);
+      endlessSeamRef.current = rightmostCol(data.level);
       setMetrics(data.metrics);
     } catch (err) {
       setError(err.message);
