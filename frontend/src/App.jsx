@@ -304,7 +304,7 @@ export default function App() {
               onProgress={handleProgress}
             />
           ) : viewMode === 'play' ? (
-            <GameCanvas level={level} onWin={handleWin} playable={metrics?.playable} />
+            <GameCanvas level={level} onWin={handleWin} />
           ) : (
             <LevelCanvas level={level} />
           )}
