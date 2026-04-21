@@ -19,6 +19,12 @@ PLATFORM = 3
 HAZARD = 6
 WALKABLE = {SOLID, SLOPE, PLATFORM}
 
+# Game-physics constant: with JUMP_FORCE=-13 and GRAVITY=0.6 in GameCanvas,
+# a jump peaks ~4 tiles above the take-off row regardless of target. The arc
+# check uses this to know where to look for mid-flight hazards, even for
+# small BFS jumps where the target is only 1–2 tiles up.
+GAME_JUMP_PEAK = 4
+
 
 # --- 1. Tile Distribution Similarity ---
 
@@ -65,6 +71,64 @@ def is_standing_position(level, row, col):
     return is_walkable(level, row, col)
 
 
+def jump_arc_clear(level, r, c, nr, nc):
+    """
+    True if the jump from (r, c) to (nr, nc) is mid-flight feasible:
+      1. No HAZARD inside the arc rectangle (instant-death mid-jump).
+      2. The take-off column above the player is clear of SOLID tiles up
+         to the target height — otherwise the player bonks their head on
+         a ceiling and never rises far enough to reach (nr, nc).
+      3. The landing column directly above the target is clear — same
+         idea on the descent side.
+
+    We don't check SOLID in the interior horizontal region because the
+    game's continuous horizontal input carries the player past mid-arc
+    ceilings (they rise, bonk, fall, but keep drifting sideways and
+    often still land on the target).
+    """
+    r_peak = min(r - GAME_JUMP_PEAK, min(r, nr) - 1)
+    r_max = max(r, nr)
+    c_lo, c_hi = min(c, nc), max(c, nc)
+    # (1) Hazards anywhere in the arc rectangle
+    for rr in range(r_peak, r_max + 1):
+        if rr < 0 or rr >= GRID_HEIGHT:
+            continue
+        for cc in range(c_lo, c_hi + 1):
+            if (rr, cc) == (r, c) or (rr, cc) == (nr, nc):
+                continue
+            if int(level[rr, cc]) == HAZARD:
+                return False
+    # (2) Take-off column clearance — player must clear rows (nr+1 .. r-1)
+    #     in column c to reach target altitude, if the jump rises at all.
+    if nr < r:
+        for rr in range(nr, r):
+            if (rr, c) == (r, c) or (rr, c) == (nr, nc):
+                continue
+            if rr < 0 or rr >= GRID_HEIGHT:
+                continue
+            if int(level[rr, c]) in WALKABLE:
+                return False
+    # (3) Landing column clearance — rows above target (nr-1 .. nr-2) in
+    #     column nc. If they're solid, player hits the ceiling during
+    #     descent and doesn't land cleanly on (nr, nc).
+    for rr in (nr - 1, nr - 2):
+        if rr < 0 or rr >= GRID_HEIGHT:
+            continue
+        if (rr, nc) == (r, c) or (rr, nc) == (nr, nc):
+            continue
+        if int(level[rr, nc]) in WALKABLE:
+            return False
+    return True
+
+
+def fall_path_clear(level, r, c, nr, nc):
+    """True if the column between (r, c) and (nr, nc) contains no hazard."""
+    for rr in range(r + 1, nr):
+        if 0 <= rr < GRID_HEIGHT and int(level[rr, nc]) == HAZARD:
+            return False
+    return True
+
+
 def check_playability(level, max_jump_height=2, max_jump_width=2):
     """
     BFS-based check: can a player reach from leftmost column to rightmost?
@@ -104,7 +168,7 @@ def check_playability(level, max_jump_height=2, max_jump_width=2):
             for dc in range(-max_jump_width, max_jump_width + 1):
                 nr, nc = r - dh, c + dc
                 if 0 <= nr < GRID_HEIGHT and 0 <= nc < GRID_WIDTH:
-                    if is_standing_position(level, nr, nc):
+                    if is_standing_position(level, nr, nc) and jump_arc_clear(level, r, c, nr, nc):
                         moves.append((nr, nc))
 
         # Fall: drop down from current position
@@ -116,7 +180,8 @@ def check_playability(level, max_jump_height=2, max_jump_width=2):
                     if nr >= GRID_HEIGHT:
                         break
                     if is_standing_position(level, nr, nc):
-                        moves.append((nr, nc))
+                        if fall_path_clear(level, r, c, nr, nc):
+                            moves.append((nr, nc))
                         break
                     if level[nr, nc] in WALKABLE:
                         break
