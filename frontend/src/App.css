@@ -461,8 +461,8 @@ body {
   margin-right: 0.25rem;
 }
 
-.game-controls-hint .playable-badge-left {
-  margin-right: auto;
+.game-controls-hint .playable-badge-right {
+  margin-left: auto;
 }
 
 .game-controls-hint kbd {
