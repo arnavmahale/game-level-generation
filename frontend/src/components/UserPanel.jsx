@@ -14,16 +14,8 @@ export default function UserPanel({ user, stats, onLogout }) {
           <strong>{stats?.endless_best ?? 0}</strong>
         </div>
         <div className="stat-line">
-          <span>VAE completed</span>
+          <span>Levels completed</span>
           <strong>{stats?.completions?.vae ?? 0}</strong>
-        </div>
-        <div className="stat-line">
-          <span>Bigram completed</span>
-          <strong>{stats?.completions?.bigram ?? 0}</strong>
-        </div>
-        <div className="stat-line">
-          <span>Naive completed</span>
-          <strong>{stats?.completions?.naive ?? 0}</strong>
         </div>
       </div>
     </div>
