@@ -328,6 +328,19 @@ def generate():
         seed = int(seed)
     apply_repair = bool(data.get("repair", True))
 
+    # Endless mode passes the rightmost column of the previous chunk so we
+    # can stitch it into col 0 of the new chunk — otherwise adjacent chunks
+    # have uncorrelated terrain and the player falls into a seam gap.
+    # Shape: list of GRID_HEIGHT ints in {0, 1, 6} (post-collapse tile IDs).
+    left_context = data.get("left_context")
+    if left_context is not None:
+        try:
+            left_context = [int(x) for x in left_context]
+            if len(left_context) != 20:
+                left_context = None
+        except (TypeError, ValueError):
+            left_context = None
+
     registry = ModelRegistry.get()
     params_used = {"model": model_name, "difficulty": difficulty}
 
@@ -364,6 +377,13 @@ def generate():
     # Enforce the clean sky / floor silhouette so every level reads as a
     # 'platformer screen' rather than a field of random tiles.
     levels = np.stack([enforce_layout(levels[0])])
+
+    # Seam-stitch endless chunks: copy the previous chunk's rightmost
+    # column into col 0 so terrain carries over. Repair runs next and
+    # bridges whatever pattern this produces.
+    if left_context is not None:
+        for r, tile in enumerate(left_context):
+            levels[0, r, 0] = tile
 
     params_used["repair"] = apply_repair
     if apply_repair:
