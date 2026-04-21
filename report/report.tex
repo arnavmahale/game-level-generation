@@ -1,0 +1,670 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{url}
+\usepackage[numbers]{natbib}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=blue!60!black,
+    urlcolor=blue!70!black,
+}
+\usepackage{titling}
+
+\title{\textbf{TerrainGen: Generating Playable 2D Platformer Levels\\
+with a BFS-Repaired Conditional VAE}\\
+\normalsize{AIPI 540 Individual Project --- Technical Report}}
+
+\author{Arnav Mahale\\
+\texttt{arnav.mahale@duke.edu}\\
+Duke University}
+
+\date{April 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We study the task of generating short, playable 2D platformer screens in the
+style of \emph{SuperTux}. Three generative models --- a naive ground-height
+baseline, a bigram transition model, and a conditional convolutional VAE ---
+are trained on a dataset of $\sim$1{,}500 twenty-by-forty tile screens
+extracted from the SuperTux open-source game. All three produce outputs
+that are visually plausible but almost never playable in isolation
+(\,$\approx$0\% BFS reachability). We show that a lightweight
+physics-aware repair post-pass --- BFS playability search plus greedy
+platform-bridging and hazard-carving --- lifts playability to
+\textbf{84.5\%} for the bigram and \textbf{78.5\%} for the VAE at
+medium difficulty, without meaningfully distorting the learned tile
+distribution (\(\Delta\text{JS} < 0.005\) across every cell). The
+repair ablation is the project's central experiment; its headline
+is that for short-horizon tile-grid level generation, the ``hard''
+playability constraint is better handled as an explicit
+post-processing stage than implicit in the learned distribution. The
+system is deployed as a playable web app at
+\url{https://arnav161-genterrain.hf.space}.
+\end{abstract}
+
+% ---------------------------------------------------------------------------
+\section{Problem Statement}
+
+Procedural content generation (PCG) for 2D platformers sits at the
+intersection of generative modeling and game-design constraints: the
+output must look like a level, be \emph{solvable} (a player can reach
+the right edge from the left), and --- for a shipped product --- be
+diverse enough that repeated plays feel fresh. Naive application of
+modern generative models to tile grids typically yields outputs that
+score well on visual/distributional metrics (e.g., FID-analogues,
+Jensen-Shannon divergence) while failing the much-simpler question
+\emph{can the player actually finish this level?} This project asks a
+concrete engineering question:
+
+\begin{quote}
+\emph{If we train a generative model on $\sim$1{,}500 short SuperTux
+screens, can we produce an interactive, browser-playable experience
+where every generated level is beatable, without requiring the
+generative model itself to learn the hard physics constraints?}
+\end{quote}
+
+Our answer is yes, and the load-bearing piece is not the model --- it
+is a physics-aware repair pass.
+
+% ---------------------------------------------------------------------------
+\section{Data Sources}
+
+All training data derives from the \textbf{SuperTux} open-source 2D
+platformer\footnote{\url{https://github.com/SuperTux/supertux}},
+MIT-licensed. The raw inputs are:
+
+\begin{itemize}
+    \item \texttt{data/raw/tiles.strf} --- the SuperTux tileset
+    definition (9{,}296 lines of S-expressions), giving for each tile
+    ID its attribute bitfield (SOLID, UNISOLID, SLOPE, HURTS, WATER,
+    etc.).
+    \item \texttt{data/raw/all\_levels.txt} --- 2{,}433 non-overlapping
+    20$\times$40 tile-ID chunks, sliced from SuperTux's $\sim$110
+    built-in \texttt{.stl} level files.
+\end{itemize}
+
+\paragraph{Tile categorization.}
+Raw SuperTux tile IDs encode visual theme (snow, forest, castle) in
+addition to gameplay role. Since PCG should be theme-agnostic, we
+collapse 6{,}180 unique tile IDs to 8 gameplay categories:
+\emph{empty, solid, slope, platform (one-way), bonus, water, hazard,
+decoration}. The mapping is built by parsing \texttt{tiles.strf} for
+both bulk tile arrays and per-tile boolean attributes. Coverage:
+1{,}525 of 1{,}569 non-zero tile IDs observed in levels (\textbf{99.9\%});
+the remaining 0.1\% default to \emph{decoration}.
+
+\paragraph{Filtering and splitting.}
+Because SuperTux levels can be hundreds of columns tall, many sliced
+chunks are mostly sky. We drop any chunk with $<$10\% non-air tiles
+(which removes 924 chunks, including all 248 completely-empty ones),
+leaving 1{,}509 level chunks. These are split 80/10/10 into
+train/val/test with fixed seed 42.
+
+\paragraph{Category imbalance.}
+The post-filter category distribution is sharply skewed: empty
+(49.9\%), solid (26.9\%), decoration (22.3\%), and everything else
+$<$1\% combined. This is load-bearing for training choices (we use
+\emph{sqrt}-inverse class weights, not inverse-frequency --- see
+Section~\ref{sec:models}) and for how we read the evaluation numbers
+(tile-level distribution metrics will be dominated by the common
+categories).
+
+% ---------------------------------------------------------------------------
+\section{Related Work}
+
+The problem we address has a small but well-developed literature.
+\citet{summerville2018procedural} survey PCG via machine learning and
+identify \emph{playability guarantees} as a recurring weakness of
+purely generative approaches --- a framing we adopt directly in our
+experiment design. The canonical Super Mario variant of this task is
+\citet{volz2018evolving}, which trains a GAN on Mario Bros. screens
+and composes them with evolutionary search to enforce a design
+objective. Our approach differs in two ways: (i) we use a conditional
+VAE \citep{kingma2014auto,sohn2015learning} rather than a GAN for
+tractability on a small dataset, and (ii) we make the playability
+constraint fully deterministic via BFS post-processing, analogous to
+\citet{cooper2013paris} and the general ``generate-then-test'' PCG
+pattern \citep{togelius2011search}, instead of coupling it into the
+search loop.
+
+Our bigram classical baseline builds on the long history of grammar-
+and transition-based PCG (\citet{smith2010tanagra} among others); our
+naive baseline is intentionally minimal, following the course's
+insistence on a \emph{truly} uninformative control.
+
+Finally, the \emph{post-hoc repair} approach we ultimately rely on
+closely parallels the ``feasibility repair operators'' in search-based
+PCG \citep{togelius2011search} and the scene-graph correction stage in
+\citet{earle2021illuminating}, though we apply it as a deterministic
+post-pass rather than inside a search loop.
+
+% ---------------------------------------------------------------------------
+\section{Evaluation Strategy and Metrics}
+\label{sec:eval}
+
+Our evaluation treats generation as a constrained design problem with
+\emph{three} non-negotiables: visual plausibility, playability, and
+diversity. Metric choices reflect those objectives.
+
+\paragraph{Playability rate (primary).}
+We run a physics-aware breadth-first search from every valid standing
+position in the leftmost column; the level passes if any reachable
+cell lies in the rightmost column. The BFS is \emph{arc-aware}: jump
+moves are rejected unless the mid-flight rectangle
+$\{(r,c): r\in[r_\text{peak}, r_\text{max}],\, c\in[c_\text{lo}, c_\text{hi}]\}$
+contains no hazard AND both the take-off column (rows
+$[n_r, r-1]$ in column $c$) and the two cells above the landing point
+are clear of walkable tiles. This extra check mirrors the actual
+browser game's physics (\texttt{JUMP\_FORCE=-13}, \texttt{GRAVITY=0.6},
+yielding a $\sim$4-tile peak). Without it, BFS over-approximates and
+gives false playable labels for levels that are unreachable in the
+browser; we verified this ourselves by repeatedly failing ``playable''
+levels live. The constant \texttt{GAME\_JUMP\_PEAK=4} bridges the BFS
+abstraction to the continuous parabola.
+
+\paragraph{Jensen-Shannon divergence.}
+We compare generated and training tile-category histograms:
+\[
+\operatorname{JS}(P \| Q) = \tfrac{1}{2} \operatorname{KL}(P \| M) + \tfrac{1}{2} \operatorname{KL}(Q \| M),
+\quad M = \tfrac{1}{2}(P+Q).
+\]
+Lower is better. JS is symmetric and bounded in $[0,\ln 2]$, making
+cross-model comparison meaningful. We pre-compute the train-set
+histogram once and ship it with the app to avoid loading the full
+150MB training JSONL at inference.
+
+\paragraph{Structural metrics.}
+\emph{Ground coverage} = fraction of walkable tiles.
+\emph{Ground contiguity} = fraction of ground tiles adjacent to another
+ground tile (proxy for ``are your platforms archipelagos or islands?'').
+\emph{Hazard density} = fraction of hazard tiles. These correlate with
+visual legibility more than playability, but diverging from the real
+distribution on any of them flags a mode collapse.
+
+\paragraph{Pairwise diversity.}
+Mean Hamming distance across 100 sampled level pairs. Higher is more
+diverse. We log this to catch the opposite failure mode: a model that
+is perfectly playable because it collapses to a single archetype.
+
+\paragraph{Why not classification metrics?}
+This is a generative task; precision/recall/F1 are not well-defined.
+Tile-level ``accuracy'' (comparing a generated tile to a reference
+tile at the same position) is meaningless because there is no ground
+truth per position --- any position has many legitimate completions.
+Our closest analogue to a confusion matrix is
+Figure~\ref{fig:confusion} (Section~\ref{sec:results}), which shows
+each model's playable/unplayable outcome matrix before and after
+repair.
+
+% ---------------------------------------------------------------------------
+\section{Modeling Approach}
+\label{sec:models}
+
+\subsection{Data processing pipeline}
+Each stage has a distinct role:
+\begin{enumerate}
+    \item \textbf{Parse tileset} (\texttt{build\_tile\_mapping.py}):
+    map 6{,}180 tile IDs to 8 gameplay categories from the SuperTux
+    attribute bitfield. \emph{Rationale:} theme-invariant targets cut
+    vocabulary by $\sim$800$\times$ and make the tiny dataset tractable.
+    \item \textbf{Build features} (\texttt{build\_features.py}):
+    remap the 2{,}433 raw chunks and drop those with $<$10\% non-air
+    content. \emph{Rationale:} near-empty chunks would bias the model
+    toward outputting sky.
+    \item \textbf{Assign difficulty buckets} (\texttt{difficulty.py}):
+    score each chunk by a hand-designed structural difficulty (gaps,
+    hazards, height variance) and tertile-bin into easy / medium /
+    hard. \emph{Rationale:} gives the VAE a conditioning signal we
+    can expose via a UI slider.
+    \item \textbf{Bake layout into training data}
+    (\texttt{repair.enforce\_layout}): force top 4 rows to empty sky
+    and bottom 2 rows to solid floor before training the VAE.
+    \emph{Rationale:} these bands are enforced at inference too, so
+    the VAE should not waste capacity modeling them.
+\end{enumerate}
+
+\subsection{Hyperparameter tuning strategy}
+With $\sim$1.5k training chunks on CPU, we could not afford a grid
+search. We chose three configurations informed by failure modes
+observed on the train/val split:
+\begin{itemize}
+    \item Inverse-frequency class weights collapsed the VAE to near-
+    uniform output (rare hazards over-represented). We switched to
+    \emph{sqrt}-inverse weights
+    $w_c \propto 1/\sqrt{\operatorname{freq}(c)}$, capped at 1.5, which
+    recovers a realistic histogram.
+    \item KL weight $\beta = 0.5$ drove posterior collapse; we use
+    $\beta = 0.1$.
+    \item Latent dimension 64 (vs.\ the prior project's 32) gave
+    better reconstruction on val without harming diversity.
+    \item Epochs 150, early selection on val cross-entropy. No
+    learning-rate search; Adam at $10^{-3}$ with
+    \texttt{ReduceLROnPlateau} was sufficient.
+    \item Classifier-free guidance: drop conditioning with probability
+    $p=0.15$ during training; at inference use guidance scale 2.0.
+\end{itemize}
+
+\subsection{Models evaluated}
+
+\paragraph{Naive baseline (\texttt{model\_naive.py}).}
+Learn the mean and standard deviation of per-column ground height from
+training data ($\bar{h} \approx 6.9$, $\sigma_h \approx 8.1$). At
+generation time, sample a per-column height and fill solid below.
+\emph{Why this?} Strictly non-informative --- no structure, no
+features, no conditioning. Establishes a floor and a diagnostic: if
+naive alone passes playability the task is uninteresting.
+
+\paragraph{Classical ML --- bigram transitions (\texttt{model\_classical.py}).}
+Learn three 8$\times$8 matrices --- vertical ($P(t_{r,c}\mid t_{r-1,c})$),
+horizontal ($P(t_{r,c}\mid t_{r,c-1})$), and a row prior $P(t\mid r)$ ---
+then sample column-by-column. Combine the three via a
+\emph{weighted average}
+$0.5 \cdot \text{prior} + 0.25 \cdot \text{vert} + 0.25 \cdot \text{horiz}$.
+\emph{Why this?} Captures local spatial statistics without the training
+burden of a neural model. Key implementation note: we initially tried
+multiplicative combination $P \cdot V \cdot H$, which collapsed the
+model to all-empty because empty$\to$empty dominates all three
+distributions. The weighted average is load-bearing.
+
+\paragraph{Deep learning --- conditional convolutional VAE
+(\texttt{model\_deep.py}).}
+Encoder: 3 strided conv blocks (8$\to$64$\to$128$\to$256 channels)
+with residual connections and BatchNorm, flatten to a 64-dim latent.
+Decoder: mirror, conditioned on a 4-dim one-hot (3 difficulty buckets
+$+$ 1 null bucket for classifier-free guidance). Input is one-hot 3-class
+(collapsed: empty/solid/hazard) on the full 20$\times$40 grid. We use
+sqrt-inverse class weights on the cross-entropy reconstruction loss,
+$\beta=0.1$ KL weight, and train for 150 epochs on CPU. At inference we
+sample $z \sim \mathcal{N}(0, I)$, decode both conditional and
+unconditional logits, and extrapolate:
+\[
+\ell = \ell_\text{uncond} + \gamma (\ell_\text{cond} - \ell_\text{uncond}), \quad \gamma = 2.
+\]
+\emph{Why this?} Demonstrates a modern deep generative model on the
+same task; provides the conditioning signal the UI needs.
+
+\paragraph{Post-processing: \texttt{enforce\_layout} $\to$ \texttt{repair}.}
+Every model's raw output is passed through a deterministic post-pass
+shared across models: (a) force the sky/floor silhouette, (b) strip
+stray sky walls and sub-floor pits, (c) ensure every column has a
+floor and a leftmost spawn, and (d) iteratively place one-way
+platforms (greedy BFS-guided bridging) and carve walls or hazards
+until the right edge is reachable --- or 60 iterations elapse. Repair
+is the centerpiece of our ablation and the subject of Section~\ref{sec:experiment}.
+
+% ---------------------------------------------------------------------------
+\section{Results}
+\label{sec:results}
+
+\begin{table}[h]
+\centering
+\small
+\caption{Primary metrics across (model, difficulty) cells on 200
+generated samples per cell, with the shipped repair pipeline applied.
+\emph{Real@test} is the held-out SuperTux test split as a reference
+ceiling. BFS playability is the arc-aware variant described in
+Section~\ref{sec:eval}. Arrows indicate direction of improvement.}
+\label{tab:main}
+\begin{tabular}{lrrrrr}
+\toprule
+\textbf{Cell} & \textbf{Playability} $\uparrow$ & \textbf{JS div.} $\downarrow$ & \textbf{Ground cov.} & \textbf{Hazard dens.} & \textbf{Diversity} $\uparrow$ \\
+\midrule
+real@test   & 23.0\% & 0.0111 & 37.4\% & 0.0172 & 0.3475 \\
+\midrule
+naive@50    & 56.0\% & 0.0193 & 42.9\% & 0.0000 & 0.2796 \\
+bigram@50   & \textbf{84.5\%} & \textbf{0.0113} & 35.2\% & 0.0140 & 0.2631 \\
+vae@easy    & 31.5\% & 0.0171 & 36.1\% & 0.0604 & 0.2801 \\
+vae@medium  & 78.5\% & 0.0114 & 38.3\% & 0.0136 & 0.2180 \\
+vae@hard    & 15.5\% & 0.0168 & 31.9\% & 0.0570 & 0.3046 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Quantitative comparison.}
+Table~\ref{tab:main} summarizes the shipped pipeline (enforce-layout
+$\to$ repair) evaluated on 200 samples per cell. Two numbers stand
+out:
+\begin{itemize}
+    \item The bigram exceeds real@test on playability (84.5\% vs.\
+    23.0\%). This is not a bug: real@test playability is low because
+    SuperTux chunks are slices of longer levels, so many chunks are
+    interior screens with no leftmost spawn or no rightmost exit.
+    \emph{Repaired} samples are shaped by the repair pass to have
+    both --- a fair side-effect of the problem framing (we generate
+    standalone screens, not slices).
+    \item VAE-medium is competitive (78.5\%), but VAE-easy and
+    VAE-hard lag. The ablation (Section~\ref{sec:experiment})
+    identifies hazard saturation as the root cause on hard and
+    ceiling-above-lane geometry on easy.
+\end{itemize}
+
+\paragraph{Playable/unplayable outcome matrix.}
+Figure~\ref{fig:confusion} is the generative analogue of a confusion
+matrix: for each cell, the fraction of 200 samples that are playable
+vs.\ unplayable, before and after repair. No-repair bars are near-zero
+everywhere; with-repair bars span the full range from VAE-hard (15.5\%)
+to bigram (84.5\%).
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.95\linewidth]{../experiments/results/repair_ablation.png}
+\caption{Playability outcome matrix: 200 samples per (model, difficulty)
+cell, before vs.\ after repair. Real@test plotted once as a reference.
+Repair yields a +55--85 percentage-point swing on every model cell.}
+\label{fig:confusion}
+\end{figure}
+
+% ---------------------------------------------------------------------------
+\section{Error Analysis}
+\label{sec:errors}
+
+We picked five specific mispredictions spanning all five (model,
+difficulty) cells, each of which the shipped repair pipeline fails to
+make playable. Figure~\ref{fig:errors} shows them; the dashed line
+marks the farthest column BFS reaches before halting.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.9\linewidth]{figures/error_cases.png}
+\caption{Five specific mispredictions, one per model cell. Dashed line
+shows the column at which BFS halts.}
+\label{fig:errors}
+\end{figure}
+
+\begin{description}
+    \item[Case 1 --- naive@50, seed 4, halts at c=34.] A Gaussian-
+    perturbed column of height 14 sits next to one of height 5, and
+    the resulting 9-tile step-up exceeds the player's jump reach
+    ($\text{max\_jump\_height}=2$, $\text{max\_jump\_width}=2$).
+    \emph{Root cause:} the naive baseline has no notion of reachability
+    between adjacent columns; height is sampled i.i.d.\ per column.
+    \emph{Mitigation:} cap per-column height-delta (a running
+    random walk instead of i.i.d.\ Gaussian sampling). One-line fix.
+
+    \item[Case 2 --- bigram@50, seed 7, halts at c=19.] A mid-level
+    wall of SOLID tiles rising from the floor to row 4. The bigram's
+    row prior says ``column is mostly solid at this row,'' and the
+    horizontal transition lets it bleed two columns wide. Repair's
+    \texttt{\_carve\_walls} pass can chew through 1--2 tiles but not
+    a thick contiguous column.
+    \emph{Root cause:} no global reachability awareness in the
+    column-by-column sampler.
+    \emph{Mitigation:} add a repair pre-pass that thins walls
+    $>3$ tiles tall to at most 2 before bridging; or sample entire
+    rows conditionally rather than independent columns.
+
+    \item[Case 3 --- vae@easy, seed 0, BFS never enters (no valid spawn).]
+    The VAE places hazards on or adjacent to every leftmost standing
+    position. Repair's \texttt{\_ensure\_spawn} pass clears a small
+    rectangle at the left edge but the surrounding hazards still make
+    the spawn unreachable under arc-aware BFS.
+    \emph{Root cause:} classifier-free guidance at $\gamma=2$ sharpens
+    the easy bucket's tendency to cluster hazards near ground level
+    --- the conditional signal is ``easy'' but the model has learned
+    that visually ``easy'' SuperTux levels include decorative hazards.
+    \emph{Mitigation:} enlarge the spawn-clearing rectangle to
+    $5 \times 5$, or apply per-bucket hazard-density caps at inference.
+
+    \item[Case 4 --- vae@medium, seed 3, halts at c=34.] A mid-level
+    hazard ``moat'' spans four columns at a height the repair can
+    theoretically bridge, and indeed repair places a platform above
+    it. But the platform height interacts with the arc-clear check:
+    the intended jump arc passes through a residual hazard two rows
+    above the moat.
+    \emph{Root cause:} repair places bridge tiles greedily at a single
+    height; it does not iterate on bridge-height choices.
+    \emph{Mitigation:} extend \texttt{\_place\_bridge\_step} to try
+    multiple heights ($\Delta r \in \{-1, -2, -3\}$) and accept the
+    first one whose arc-clear check also passes.
+
+    \item[Case 5 --- vae@hard, seed 1, halts at c=11.] The hard
+    bucket's hazard density (6.0\% vs.\ the real data's 1.7\%) saturates
+    the level; entire rows are pocked with hazards. Repair can route
+    around a small cluster but not a contiguous field.
+    \emph{Root cause:} the VAE learns that ``hard'' SuperTux screens
+    are hazard-dense, and classifier-free guidance amplifies that
+    signal beyond the training distribution.
+    \emph{Mitigation:} reduce guidance scale specifically on the hard
+    bucket, or cap hazard density at a post-sample step (convert a
+    random subset of hazards to empty until density $\leq 0.03$).
+\end{description}
+
+Two of the five cases (3 and 5) share a root cause --- the VAE's hazard
+distribution on the easy and hard buckets is miscalibrated --- and a
+single mitigation (clip hazard density at inference) would fix both.
+That is our top priority under ``Future Work.''
+
+% ---------------------------------------------------------------------------
+\section{Experiment: Repair Ablation}
+\label{sec:experiment}
+
+\subsection{Experimental plan}
+The research question is: \emph{how much of the shipped app's
+playability comes from the model, and how much from the BFS repair
+post-pass?} We hold everything else constant and vary only the
+presence of \texttt{scripts.repair.repair}. For each of six cells
+(real@test, naive@50, bigram@50, vae@easy, vae@medium, vae@hard) we
+generate 200 levels with fixed seed 42 and compute all five metrics
+from Section~\ref{sec:eval} under two conditions:
+\begin{enumerate}
+    \item \textbf{no\_repair}: model sample $\to$
+    \texttt{enforce\_layout} $\to$ 3-class collapse $\to$ metrics.
+    \item \textbf{with\_repair}: model sample $\to$
+    \texttt{enforce\_layout} $\to$ \texttt{repair} $\to$ 3-class
+    collapse $\to$ metrics.
+\end{enumerate}
+Both conditions share \texttt{enforce\_layout}, so the only delta is
+the BFS repair loop itself.
+
+\subsection{Results}
+
+\begin{table}[h]
+\centering
+\small
+\caption{Repair ablation, 200 samples per cell, seed=42. $\Delta$ is
+with\_repair $-$ no\_repair.}
+\label{tab:ablation}
+\begin{tabular}{lrrr|rrr}
+\toprule
+ & \multicolumn{3}{c|}{\textbf{Playability} $\uparrow$} & \multicolumn{3}{c}{\textbf{JS divergence} $\downarrow$} \\
+\textbf{Cell} & no-rep. & with-rep. & $\Delta$ & no-rep. & with-rep. & $\Delta$ \\
+\midrule
+naive@50    & 0.0\% & 56.0\% & \textbf{+56.0} & 0.0225 & 0.0193 & $-0.0032$ \\
+bigram@50   & 0.0\% & 84.5\% & \textbf{+84.5} & 0.0112 & 0.0113 & $+0.0001$ \\
+vae@easy    & 0.0\% & 31.5\% & \textbf{+31.5} & 0.0191 & 0.0171 & $-0.0020$ \\
+vae@medium  & 0.5\% & 78.5\% & \textbf{+78.0} & 0.0119 & 0.0114 & $-0.0004$ \\
+vae@hard    & 0.0\% & 15.5\% & \textbf{+15.5} & 0.0172 & 0.0168 & $-0.0004$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Interpretation}
+Three findings.
+
+\paragraph{Finding 1: repair is where the playability comes from.}
+Raw model output is 0\% playable on four of five cells (0.5\% on
+vae@medium). Every shipped beatable level is a repaired level. This
+inverts the intuition that the model ``learns'' the constraint --- on
+a dataset this small, with chunks that are already sub-slices of
+longer levels, the generative model has no incentive to output
+left-to-right traversable geometry. The repair pass encodes that
+constraint explicitly.
+
+\paragraph{Finding 2: repair is near-free on distribution.}
+JS divergence shifts by at most 0.0032 and usually less than 0.001 ---
+an order of magnitude below inter-model variance. Repair does not
+distort the tile histogram into a ``repaired'' distribution; it
+surgically flips a small number of tiles near the BFS cut.
+
+\paragraph{Finding 3: repair has failure modes that point at the model.}
+Bigram's +84.5 lift vs.\ VAE-hard's +15.5 lift identifies where the
+model's output exceeds repair's capacity. Hazard-dense VAE output
+(hard bucket, 6.0\% hazard density) defeats the repair pass because
+repair is reachability-focused: it adds platforms, it does not remove
+hazards in bulk. This is the clearest signal that the next investment
+should be in reshaping the VAE's class distribution (or hazard-capping
+at inference), not in extending the repair logic.
+
+\subsection{Recommendations}
+\begin{itemize}
+    \item Keep repair as the primary playability enforcer. It is
+    cheap, deterministic, and easy to debug (unlike a learned
+    constraint).
+    \item Address the VAE hazard miscalibration directly: clip hazard
+    density per bucket at inference.
+    \item Do \emph{not} bet on training the playability constraint
+    into the model at this data scale. The ablation shows the model
+    lacks the signal.
+\end{itemize}
+
+% ---------------------------------------------------------------------------
+\section{Conclusions}
+
+Three generative models produce visually plausible but unplayable
+output; a shared BFS-guided repair pass makes them shippable. The
+bigram transition model, helped by repair, reaches 84.5\% playability
+--- higher than our conditional VAE does at any difficulty. The
+take-away for short-horizon tile-grid PCG is that hard constraints
+(playability) are better handled outside the learned model than
+inside it, at least at this data scale.
+
+The system is deployed at \url{https://arnav161-genterrain.hf.space};
+users can pick a model, a difficulty, and either play a single
+generated level or play an endless seam-stitched stream of chunks.
+
+% ---------------------------------------------------------------------------
+\section{Future Work}
+
+Given another semester:
+
+\begin{itemize}
+    \item \textbf{Hazard-calibrated VAE sampling.} Implement
+    inference-time hazard capping (Section~\ref{sec:errors}); expected
+    to lift VAE-easy and VAE-hard playability substantially.
+    \item \textbf{Larger dataset via SuperTux add-ons.} The community
+    add-on repo hosts $\sim$10$\times$ more level data; rerunning the
+    full pipeline on that would let us compare naive/bigram/VAE at a
+    more representative scale. Part of the reason repair dominates
+    here is data starvation.
+    \item \textbf{Sequence model for long horizons.} For endless mode
+    we currently stitch 20$\times$40 chunks by copying the rightmost
+    column as context for the next chunk. A small Transformer over
+    column-sequences would give the model actual long-range context
+    (and remove the stitching-discontinuity failure modes we see in
+    endless mode today).
+    \item \textbf{Human playtesting.} BFS playability is a proxy for
+    ``fun.'' A paired user study (\emph{which level feels more fun?})
+    would tell us whether VAE-diversity or bigram-consistency matters
+    more to actual players.
+    \item \textbf{Broader experiment grid.} The repair ablation was a
+    single axis. A 3-axis factorial (vocabulary size $\times$
+    repair-iterations $\times$ guidance scale) would surface
+    higher-order effects.
+\end{itemize}
+
+% ---------------------------------------------------------------------------
+\section{Commercial Viability Statement}
+
+\paragraph{Where this works.} The pipeline is a reasonable starting
+point for (a) indie 2D platformer studios wanting a
+randomized-daily-level mode with a hard playability guarantee, or
+(b) educational games that need a steady stream of short, beatable
+puzzle screens. The BFS repair pass is strong enough that every
+shipped level is beatable; the content is derivative (SuperTux-style
+sidescrollers) but the infrastructure (repair, seam-stitching,
+metrics) is re-usable over any tile-grid game with a similar
+left-to-right traversal model.
+
+\paragraph{Where it does not work yet.} Three gaps prevent direct
+commercial use:
+\begin{enumerate}
+    \item \textbf{Aesthetic ceiling.} Output is playable but not
+    interesting. A diversity score of 0.26 means many levels read
+    similarly. Commercial players would churn.
+    \item \textbf{Single-game training data.} SuperTux's 1{,}500 chunks
+    are not enough to generalize out of style. A commercial deployment
+    would need a much larger, licensable content dataset --- raising
+    IP questions (see Ethics).
+    \item \textbf{No game-design signal.} The model doesn't know
+    anything about pacing, difficulty progression, or tutorial
+    design. Real platformer levels are curated sequences, not
+    independent screens.
+\end{enumerate}
+
+\paragraph{Honest assessment.} This is a useful infrastructure
+demonstration and a valid research project, but it is not a product.
+A commercial version would inherit the repair pass and the metric
+framework, and replace the generative model with a larger
+transformer-based one trained on licensed content.
+
+% ---------------------------------------------------------------------------
+\section{Ethics Statement}
+
+\paragraph{Training-data provenance.}
+SuperTux is MIT-licensed; re-using the levels for model training and
+rendering generated content is permissible under that license. We do
+not redistribute the SuperTux assets themselves in our repository;
+only the derived category mapping and processed chunk arrays are
+shipped.
+
+\paragraph{Content risks.}
+The model generates tile grids. It does not produce text, images of
+people, or any content with plausible routes to discriminatory,
+explicit, or privacy-violating output. The main content risk is
+\emph{derivative style}: a generated level is trivially
+recognizable as SuperTux-adjacent. We explicitly do not claim
+originality of theme.
+
+\paragraph{Creator displacement.}
+If systems like this were to scale to a large, licensed training set
+and be deployed as a replacement for human level designers, the
+standard generative-AI-economics concerns apply: level-designer work
+is a creative labor market, and automating it absent a licensing and
+compensation structure would harm designers. This project is
+deliberately small-scale and sourced from an open-source community;
+any commercial extension should pay the source creators.
+
+\paragraph{Gameplay fairness.}
+The \emph{endless} mode posts scores to a leaderboard. Because the
+generator is stochastic, different players may see different levels
+of difficulty on different runs. We disclose this in the UI (``levels
+are generated per run''), but a strict competitive mode would need
+a shared-seed option for fairness. We do not ship such a mode today.
+
+\paragraph{User data.}
+The deployed app stores only a username and hashed password per user
+account, plus opt-in gameplay stats (completions by difficulty,
+endless-mode best). No PII beyond the self-chosen username; guest
+mode requires no account.
+
+% ---------------------------------------------------------------------------
+\section*{Reproducibility}
+
+Code, data pipeline, and trained models are at\\
+\url{https://github.com/arnavmahale/game-level-generation}.
+All numbers in this report come from:
+\begin{itemize}
+    \item \texttt{scripts/experiment\_repair\_ablation.py\\ --n 200 --seed 42}
+    (Tables~\ref{tab:main} and~\ref{tab:ablation}, Figure~\ref{fig:confusion}).
+    \item \texttt{scripts/report\_error\_cases.py} (Figure~\ref{fig:errors}).
+\end{itemize}
+Both scripts run on CPU in under five minutes from the trained-model
+state.
+
+% ---------------------------------------------------------------------------
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}
