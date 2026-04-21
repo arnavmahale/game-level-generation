@@ -9,11 +9,5 @@ export const TILE_COLORS = {
   7: '#228B22', // decoration - forest green
 };
 
-export const CATEGORY_NAMES = {
-  0: 'Empty',
-  1: 'Solid',
-  6: 'Hazard',
-};
-
 export const GRID_HEIGHT = 20;
 export const GRID_WIDTH = 40;

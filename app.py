@@ -269,11 +269,14 @@ def auth_me():
 def score_completion(uid):
     data = request.get_json() or {}
     model = data.get("model")
-    app.logger.info("POST /api/scores/completion uid=%s model=%s", uid, model)
+    difficulty = data.get("difficulty")
+    app.logger.info("POST /api/scores/completion uid=%s model=%s diff=%s", uid, model, difficulty)
     if model not in ("naive", "bigram", "vae"):
         return jsonify({"error": "invalid model"}), 400
+    if difficulty not in (None, "easy", "medium", "hard"):
+        return jsonify({"error": "invalid difficulty"}), 400
     try:
-        db_mod.record_completion(uid, model)
+        db_mod.record_completion(uid, model, difficulty)
         return jsonify(db_mod.stats_for_user(uid))
     except Exception as e:
         app.logger.exception("score_completion failed")

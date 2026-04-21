@@ -26,14 +26,17 @@ const DIFFICULTY_LEVELS = [
 
 export default function ControlPanel({ onGenerate, isLoading }) {
   const [model, setModel] = useState('vae');
-  const [difficulty, setDifficulty] = useState(0);
+  const [difficultyId, setDifficultyId] = useState('medium');
   const [seed, setSeed] = useState('');
   const [repair, setRepair] = useState(true);
+
+  const difficultyValue = DIFFICULTY_LEVELS.find((d) => d.id === difficultyId)?.value ?? 0;
 
   const handleGenerate = () => {
     onGenerate({
       model,
-      difficulty,
+      difficulty: difficultyValue,
+      difficultyLabel: difficultyId,
       seed: seed === '' ? null : parseInt(seed, 10),
       repair,
     });
@@ -73,8 +76,8 @@ export default function ControlPanel({ onGenerate, isLoading }) {
                 <button
                   key={d.id}
                   type="button"
-                  className={`difficulty-option ${difficulty === d.value ? 'selected' : ''}`}
-                  onClick={() => setDifficulty(d.value)}
+                  className={`difficulty-option ${difficultyId === d.id ? 'selected' : ''}`}
+                  onClick={() => setDifficultyId(d.id)}
                 >
                   {d.label}
                 </button>

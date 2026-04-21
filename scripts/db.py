@@ -38,10 +38,12 @@ CREATE TABLE IF NOT EXISTS completions (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id     INTEGER NOT NULL,
     model       TEXT NOT NULL,
+    difficulty  TEXT,
     created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(user_id) REFERENCES users(id)
 );
 CREATE INDEX IF NOT EXISTS idx_completions_user_model ON completions(user_id, model);
+CREATE INDEX IF NOT EXISTS idx_completions_user_diff ON completions(user_id, difficulty);
 
 CREATE TABLE IF NOT EXISTS endless_scores (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,6 +75,11 @@ def _ensure_schema(conn):
             return
         for stmt in filter(None, (s.strip() for s in SCHEMA.split(";"))):
             conn.execute(stmt)
+        # Back-fill: older deployments had completions with no difficulty column.
+        # SQLite has no "ADD COLUMN IF NOT EXISTS", so check PRAGMA then ALTER.
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(completions)").fetchall()}
+        if "difficulty" not in cols:
+            conn.execute("ALTER TABLE completions ADD COLUMN difficulty TEXT")
         conn.commit()
         _schema_initialized = True
 
@@ -150,11 +157,11 @@ def get_user_by_id(user_id: int):
     return {"id": row[0], "username": row[1]}
 
 
-def record_completion(user_id: int, model: str):
-    log.info("record_completion user_id=%s model=%s", user_id, model)
+def record_completion(user_id: int, model: str, difficulty: str | None = None):
+    log.info("record_completion user_id=%s model=%s diff=%s", user_id, model, difficulty)
     cur = _exec_commit(
-        "INSERT INTO completions (user_id, model) VALUES (?, ?)",
-        (user_id, model),
+        "INSERT INTO completions (user_id, model, difficulty) VALUES (?, ?, ?)",
+        (user_id, model, difficulty),
     )
     log.info("record_completion inserted rowid=%s", getattr(cur, "lastrowid", None))
 
@@ -177,6 +184,19 @@ def stats_for_user(user_id: int):
     for model, n in rows:
         if model in completions:
             completions[model] = n
+    diff_rows = _exec(
+        """
+        SELECT difficulty, COUNT(*) FROM completions
+        WHERE user_id = ? AND model = 'vae'
+        GROUP BY difficulty
+        """,
+        (user_id,),
+    ).fetchall()
+    by_difficulty = {"easy": 0, "medium": 0, "hard": 0}
+    for diff, n in diff_rows:
+        if diff in by_difficulty:
+            by_difficulty[diff] = n
+    completions["by_difficulty"] = by_difficulty
     best = _exec(
         "SELECT COALESCE(MAX(score), 0) FROM endless_scores WHERE user_id = ?",
         (user_id,),
