@@ -29,13 +29,10 @@ async function postScore(path, body) {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      console.error(`[score] ${path} ${res.status}`, data);
       return { __error: data.error || `HTTP ${res.status}` };
     }
-    console.log(`[score] ${path} OK`, data);
     return data;
   } catch (e) {
-    console.error(`[score] ${path} threw`, e);
     return { __error: e.message };
   }
 }
@@ -49,7 +46,6 @@ export default function App() {
   const [level, setLevel] = useState(null);
   const [chunks, setChunks] = useState(null);
   const [metrics, setMetrics] = useState(null);
-  const [paramsUsed, setParamsUsed] = useState(null);
   const [currentModel, setCurrentModel] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -58,6 +54,8 @@ export default function App() {
   const [endlessLast, setEndlessLast] = useState(null);
   const pendingFetchRef = useRef(false);
   const winRecordedRef = useRef(false);
+  const lastFiniteParamsRef = useRef(null);
+  const regenTimerRef = useRef(null);
 
   // Check session on mount.
   useEffect(() => {
@@ -72,7 +70,10 @@ export default function App() {
   useEffect(() => {
     if (!user) { setStats(null); return; }
     if (user.isGuest) {
-      setStats({ endless_best: 0, completions: { vae: 0 } });
+      setStats({
+        endless_best: 0,
+        completions: { vae: 0, by_difficulty: { easy: 0, medium: 0, hard: 0 } },
+      });
       return;
     }
     apiFetch('/api/stats/me')
@@ -81,33 +82,36 @@ export default function App() {
       .catch(() => {});
   }, [user]);
 
-  const handleGenerate = async ({ model, difficulty, seed, repair }) => {
+  const handleGenerate = async ({ model, difficulty, difficultyLabel, seed, repair }) => {
     setIsLoading(true);
     setError(null);
     winRecordedRef.current = false;
+    if (regenTimerRef.current) {
+      clearTimeout(regenTimerRef.current);
+      regenTimerRef.current = null;
+    }
     try {
       if (model === 'infinite') {
         const data = await fetchChunk({ model: 'vae', difficulty: 50, seed: null, repair: true });
         setChunks([data.level]);
         setLevel(null);
         setMetrics(data.metrics);
-        setParamsUsed({ ...data.params_used, mode: 'infinite' });
         setCurrentModel('infinite');
         setViewMode('play');
+        lastFiniteParamsRef.current = null;
       } else {
         const data = await fetchChunk({ model, difficulty, seed, repair });
         setLevel(data.level);
         setChunks(null);
         setMetrics(data.metrics);
-        setParamsUsed(data.params_used);
         setCurrentModel(model);
+        lastFiniteParamsRef.current = { model, difficulty, difficultyLabel, seed, repair };
       }
     } catch (err) {
       setError(err.message);
       setLevel(null);
       setChunks(null);
       setMetrics(null);
-      setParamsUsed(null);
     } finally {
       setIsLoading(false);
     }
@@ -133,7 +137,6 @@ export default function App() {
       const data = await fetchChunk({ model: 'vae', difficulty: 50, seed: null, repair: true });
       setChunks([data.level]);
       setMetrics(data.metrics);
-      setParamsUsed({ ...data.params_used, mode: 'infinite' });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -141,20 +144,40 @@ export default function App() {
     }
   }, []);
 
-  // GameCanvas calls this on win in finite mode. Record once per generated level.
+  // GameCanvas calls this on win in finite mode. Record once per generated level,
+  // then auto-regenerate a fresh level (same settings) after a short pause.
   const handleWin = useCallback(async () => {
     if (winRecordedRef.current || !currentModel || currentModel === 'infinite') return;
     winRecordedRef.current = true;
+    const diffLabel = lastFiniteParamsRef.current?.difficultyLabel ?? null;
     if (user?.isGuest) {
-      setStats((s) => ({
-        endless_best: s?.endless_best ?? 0,
-        completions: { vae: (s?.completions?.vae ?? 0) + 1 },
-      }));
-      return;
+      setStats((s) => {
+        const byDiff = { easy: 0, medium: 0, hard: 0, ...(s?.completions?.by_difficulty ?? {}) };
+        if (diffLabel && diffLabel in byDiff) byDiff[diffLabel] = (byDiff[diffLabel] ?? 0) + 1;
+        return {
+          endless_best: s?.endless_best ?? 0,
+          completions: {
+            vae: (s?.completions?.vae ?? 0) + 1,
+            by_difficulty: byDiff,
+          },
+        };
+      });
+    } else {
+      const updated = await postScore('/api/scores/completion', {
+        model: currentModel,
+        difficulty: diffLabel,
+      });
+      if (updated && !updated.__error) setStats(updated);
+      else if (updated?.__error) setError(`Score not recorded: ${updated.__error}`);
     }
-    const updated = await postScore('/api/scores/completion', { model: currentModel });
-    if (updated && !updated.__error) setStats(updated);
-    else if (updated?.__error) setError(`Score not recorded: ${updated.__error}`);
+    const params = lastFiniteParamsRef.current;
+    if (params) {
+      regenTimerRef.current = setTimeout(() => {
+        regenTimerRef.current = null;
+        // Fresh seed on auto-regen so the next level isn't a duplicate.
+        handleGenerate({ ...params, seed: null });
+      }, 2000);
+    }
   }, [currentModel, user]);
 
   // GameCanvas calls this with distance (in cols) when player dies in infinite mode.
@@ -178,6 +201,11 @@ export default function App() {
   }, []);
 
   const handleLogout = async () => {
+    if (regenTimerRef.current) {
+      clearTimeout(regenTimerRef.current);
+      regenTimerRef.current = null;
+    }
+    lastFiniteParamsRef.current = null;
     if (!user?.isGuest) {
       await apiFetch('/api/auth/logout', { method: 'POST' });
       clearToken();
@@ -186,7 +214,6 @@ export default function App() {
     setLevel(null);
     setChunks(null);
     setMetrics(null);
-    setParamsUsed(null);
     setCurrentModel(null);
   };
 

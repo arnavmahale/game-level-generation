@@ -18,9 +18,22 @@ export default function UserPanel({ user, stats, onLogout }) {
             <span>Endless best</span>
             <strong>{stats?.endless_best ?? 0}</strong>
           </div>
-          <div className="stat-line">
-            <span>Levels completed</span>
-            <strong>{stats?.completions?.vae ?? 0}</strong>
+          <div className="stat-group">
+            <span className="stat-group-label">Levels completed</span>
+            <ul className="stat-sublist">
+              <li>
+                <span>Easy</span>
+                <strong>{stats?.completions?.by_difficulty?.easy ?? 0}</strong>
+              </li>
+              <li>
+                <span>Medium</span>
+                <strong>{stats?.completions?.by_difficulty?.medium ?? 0}</strong>
+              </li>
+              <li>
+                <span>Hard</span>
+                <strong>{stats?.completions?.by_difficulty?.hard ?? 0}</strong>
+              </li>
+            </ul>
           </div>
         </div>
         <button className="dropdown-logout" onClick={onLogout}>
