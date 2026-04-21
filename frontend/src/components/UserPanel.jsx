@@ -19,7 +19,14 @@ export default function UserPanel({ user, stats, onLogout }) {
             <strong>{stats?.endless_best ?? 0}</strong>
           </div>
           <div className="stat-group">
-            <span className="stat-group-label">Levels completed</span>
+            <div className="stat-group-header">
+              <span className="stat-group-label">Levels completed</span>
+              <strong>
+                {(stats?.completions?.by_difficulty?.easy ?? 0) +
+                  (stats?.completions?.by_difficulty?.medium ?? 0) +
+                  (stats?.completions?.by_difficulty?.hard ?? 0)}
+              </strong>
+            </div>
             <ul className="stat-sublist">
               <li>
                 <span>Easy</span>
