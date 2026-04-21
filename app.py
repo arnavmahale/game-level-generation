@@ -16,6 +16,7 @@ import numpy as np
 import torch
 from flask import Flask, request, jsonify, send_from_directory, session
 from flask_cors import CORS
+from itsdangerous import URLSafeSerializer, BadSignature
 
 logging.basicConfig(
     level=logging.INFO,
@@ -119,12 +120,52 @@ def get_vae_params(difficulty):
 
 app = Flask(__name__, static_folder="frontend/dist", static_url_path="")
 app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "dev-insecure-key-change-in-prod")
+# On HF Spaces the app is served inside an iframe on huggingface.co, so its
+# cookies are cross-site. SameSite=Lax cookies are suppressed in that context,
+# which makes POSTs (score recording) fail auth even though login worked.
+# Detect prod by presence of the $PORT env var the Docker image sets, and
+# switch to SameSite=None; Secure so the cookie rides cross-site over HTTPS.
+_is_prod_iframe = bool(os.environ.get("PORT"))
+# Respect the proxy's X-Forwarded-Proto so Flask knows the request is HTTPS
+# even though gunicorn is speaking plain HTTP on the loopback.
+if _is_prod_iframe:
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SAMESITE="None" if _is_prod_iframe else "Lax",
+    SESSION_COOKIE_SECURE=_is_prod_iframe,
     PERMANENT_SESSION_LIFETIME=timedelta(days=30),
 )
 CORS(app, supports_credentials=True)
+
+
+# HF Spaces embeds the app in a cross-site iframe, where Safari/Chrome block
+# third-party cookies for auth. We issue a signed token on login/register and
+# accept it via Authorization: Bearer header as a cookie-free fallback.
+_token_serializer = URLSafeSerializer(app.config["SECRET_KEY"], salt="auth-token")
+
+
+def _make_token(user_id: int) -> str:
+    return _token_serializer.dumps({"uid": int(user_id)})
+
+
+def _verify_token(token: str):
+    try:
+        data = _token_serializer.loads(token)
+        return int(data["uid"])
+    except (BadSignature, KeyError, ValueError, TypeError):
+        return None
+
+
+def _current_user_id():
+    uid = session.get("user_id")
+    if uid:
+        return uid
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return _verify_token(auth[7:])
+    return None
 
 
 from werkzeug.exceptions import HTTPException
@@ -150,7 +191,7 @@ def _unhandled_error(err):
 def _require_auth(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        uid = session.get("user_id")
+        uid = _current_user_id()
         if not uid:
             return jsonify({"error": "not authenticated"}), 401
         return fn(uid, *args, **kwargs)
@@ -177,7 +218,10 @@ def auth_register():
         return jsonify({"error": "could not create user"}), 500
     session.permanent = True
     session["user_id"] = uid
-    return jsonify({"user": {"id": uid, "username": username}})
+    return jsonify({
+        "user": {"id": uid, "username": username},
+        "token": _make_token(uid),
+    })
 
 
 @app.route("/api/auth/login", methods=["POST"])
@@ -190,7 +234,10 @@ def auth_login():
         return jsonify({"error": "invalid username or password"}), 401
     session.permanent = True
     session["user_id"] = user["id"]
-    return jsonify({"user": {"id": user["id"], "username": user["username"]}})
+    return jsonify({
+        "user": {"id": user["id"], "username": user["username"]},
+        "token": _make_token(user["id"]),
+    })
 
 
 @app.route("/api/auth/logout", methods=["POST"])
@@ -201,13 +248,19 @@ def auth_logout():
 
 @app.route("/api/auth/me", methods=["GET"])
 def auth_me():
-    uid = session.get("user_id")
+    uid = _current_user_id()
     if not uid:
         return jsonify({"user": None})
-    user = db_mod.get_user_by_id(uid)
+    # Don't session.clear() on a missed lookup: the embedded Turso replica
+    # on this worker thread may simply be stale from another thread's
+    # insert. Trust the signed cookie, fall back to a minimal user dict.
+    try:
+        user = db_mod.get_user_by_id(uid)
+    except Exception:
+        app.logger.exception("auth_me lookup failed")
+        user = None
     if user is None:
-        session.clear()
-        return jsonify({"user": None})
+        return jsonify({"user": {"id": uid, "username": "you"}})
     return jsonify({"user": user})
 
 
